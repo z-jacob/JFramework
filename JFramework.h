@@ -1,7 +1,7 @@
 /****************************************************************************
  * Copyright (c) 2025 zjlove1989
 
- * https://github.com/zjlove1989/JFramework
+ * https://github.com/z-jacob/JFramework
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -1158,7 +1158,7 @@ namespace JFramework
 		virtual void OnExecute() = 0;
 	};
 
-	class AbstractModel : public IModel
+	class AbstractModel : public virtual IModel
 	{
 	private:
 		std::weak_ptr<IArchitecture> mArchitecture;
@@ -1184,7 +1184,7 @@ namespace JFramework
 		virtual void OnDeinit() = 0;
 	};
 
-	class AbstractSystem : public ISystem
+	class AbstractSystem : public virtual ISystem
 	{
 	private:
 		std::weak_ptr<IArchitecture> mArchitecture;
