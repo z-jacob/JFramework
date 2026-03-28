@@ -62,7 +62,7 @@ namespace JFramework
 		 * @brief Constructor
 		 * @param typeName Name of the component type that failed to load
 		 */
-		ArchitectureNotSetException(const std::string& typeName)
+		explicit ArchitectureNotSetException(const std::string& typeName)
 			: FrameworkException("Architecture not available: " + typeName)
 		{
 		}
@@ -127,10 +127,10 @@ namespace JFramework
 	class ISystem;
 	class IModel;
 	class IJCommand;
-	template <typename _Ty>
+	template <typename T>
 	class IQuery;
 	class IUtility;
-	template <typename _Ty>
+	template <typename T>
 	class BindableProperty;
 	class IOCContainer;
 
@@ -177,8 +177,8 @@ namespace JFramework
 		 */
 		void RegisterEvent(std::type_index eventType, ICanHandleEvent* handler)
 		{
-			std::lock_guard<std::mutex> lock(mMutex);
-			mSubscribers[eventType.name()].push_back(handler);
+			std::lock_guard<std::recursive_mutex> lock(mMutex);
+			mSubscribers[eventType].push_back(handler);
 		}
 
 		/**
@@ -191,8 +191,8 @@ namespace JFramework
 		{
 			std::vector<ICanHandleEvent*> subscribers;
 			{
-				std::lock_guard<std::mutex> lock(mMutex);
-				auto it = mSubscribers.find(typeid(*event).name());
+				std::lock_guard<std::recursive_mutex> lock(mMutex);
+				auto it = mSubscribers.find(typeid(*event));
 				if (it != mSubscribers.end())
 				{
 					subscribers = it->second;
@@ -205,8 +205,9 @@ namespace JFramework
 				{
 					handler->HandleEvent(event);
 				}
-				catch (const std::exception&)
+				catch (const std::exception& e)
 				{
+					std::cerr << "[EventBus] Exception in event handler: " << e.what() << std::endl;
 				}
 			}
 		}
@@ -218,8 +219,8 @@ namespace JFramework
 		 */
 		void UnRegisterEvent(std::type_index eventType, ICanHandleEvent* handler)
 		{
-			std::lock_guard<std::mutex> lock(mMutex);
-			auto it = mSubscribers.find(eventType.name());
+			std::lock_guard<std::recursive_mutex> lock(mMutex);
+			auto it = mSubscribers.find(eventType);
 			if (it != mSubscribers.end())
 			{
 				auto& handlers = it->second;
@@ -240,13 +241,13 @@ namespace JFramework
 		 */
 		void Clear()
 		{
-			std::lock_guard<std::mutex> lock(mMutex);
+			std::lock_guard<std::recursive_mutex> lock(mMutex);
 			mSubscribers.clear();
 		}
 
 	private:
-		std::mutex mMutex;                                                          ///< Thread safety mutex
-		std::unordered_map<std::string, std::vector<ICanHandleEvent*>> mSubscribers; ///< Event subscriber map
+		std::recursive_mutex mMutex;                                                     ///< Thread safety mutex
+		std::unordered_map<std::type_index, std::vector<ICanHandleEvent*>> mSubscribers; ///< Event subscriber map
 	};
 
 	// ============================== Core Architecture Interface ==============================
@@ -354,171 +355,179 @@ namespace JFramework
 	public:
 		/**
 		 * @brief Template method: Register a system component
-		 * @tparam _Ty System type, must inherit from ISystem
+		 * @tparam T System type, must inherit from ISystem
 		 * @param system System instance
 		 */
-		template <typename _Ty>
-		void RegisterSystem(std::shared_ptr<_Ty> system)
+		template <typename T>
+		void RegisterSystem(std::shared_ptr<T> system)
 		{
-			static_assert(std::is_base_of_v<ISystem, _Ty>,
-				"_Ty must inherit from ISystem");
-			RegisterSystem(typeid(_Ty), std::static_pointer_cast<ISystem>(system));
+			if (!system)
+			{
+				throw std::invalid_argument("ISystem cannot be null");
+			}
+			static_assert(std::is_base_of_v<ISystem, T>,
+				"T must inherit from ISystem");
+			RegisterSystem(typeid(T), std::static_pointer_cast<ISystem>(system));
 		}
 
 		/**
 		 * @brief Template method: Register a model component
-		 * @tparam _Ty Model type, must inherit from IModel
+		 * @tparam T Model type, must inherit from IModel
 		 * @param model Model instance
 		 */
-		template <typename _Ty>
-		void RegisterModel(std::shared_ptr<_Ty> model)
+		template <typename T>
+		void RegisterModel(std::shared_ptr<T> model)
 		{
-			static_assert(std::is_base_of_v<IModel, _Ty>,
-				"_Ty must inherit from IModel");
-			RegisterModel(typeid(_Ty), std::static_pointer_cast<IModel>(model));
+			if (!model)
+			{
+				throw std::invalid_argument("IModel cannot be null");
+			}
+			static_assert(std::is_base_of_v<IModel, T>,
+				"T must inherit from IModel");
+			RegisterModel(typeid(T), std::static_pointer_cast<IModel>(model));
 		}
 
 		/**
 		 * @brief Template method: Register a utility component
-		 * @tparam _Ty Utility type, must inherit from IUtility
+		 * @tparam T Utility type, must inherit from IUtility
 		 * @param utility Utility instance
 		 */
-		template <typename _Ty>
-		void RegisterUtility(std::shared_ptr<_Ty> utility)
+		template <typename T>
+		void RegisterUtility(std::shared_ptr<T> utility)
 		{
 			if (!utility)
 			{
 				throw std::invalid_argument("IUtility cannot be null");
 			}
-			static_assert(std::is_base_of_v<IUtility, _Ty>,
-				"_Ty must inherit from IUtility");
-			RegisterUtility(typeid(_Ty), std::static_pointer_cast<IUtility>(utility));
+			static_assert(std::is_base_of_v<IUtility, T>,
+				"T must inherit from IUtility");
+			RegisterUtility(typeid(T), std::static_pointer_cast<IUtility>(utility));
 		}
 
 		/**
 		 * @brief Template method: Get a system component
-		 * @tparam _Ty System type
+		 * @tparam T System type
 		 * @return System instance
 		 * @throws ComponentNotRegisteredException if component is not registered
 		 */
-		template <typename _Ty>
-		std::shared_ptr<_Ty> GetSystem()
+		template <typename T>
+		std::shared_ptr<T> GetSystem()
 		{
-			auto system = GetSystem(typeid(_Ty));
+			auto system = GetSystem(typeid(T));
 			if (!system)
 			{
-				throw ComponentNotRegisteredException(typeid(_Ty).name());
+				throw ComponentNotRegisteredException(typeid(T).name());
 			}
-			return std::dynamic_pointer_cast<_Ty>(system);
+			return std::dynamic_pointer_cast<T>(system);
 		}
 
 		/**
 		 * @brief Template method: Get a model component
-		 * @tparam _Ty Model type
+		 * @tparam T Model type
 		 * @return Model instance
 		 * @throws ComponentNotRegisteredException if component is not registered
 		 */
-		template <typename _Ty>
-		std::shared_ptr<_Ty> GetModel()
+		template <typename T>
+		std::shared_ptr<T> GetModel()
 		{
-			auto model = GetModel(typeid(_Ty));
+			auto model = GetModel(typeid(T));
 			if (!model)
 			{
-				throw ComponentNotRegisteredException(typeid(_Ty).name());
+				throw ComponentNotRegisteredException(typeid(T).name());
 			}
-			return std::dynamic_pointer_cast<_Ty>(model);
+			return std::dynamic_pointer_cast<T>(model);
 		}
 
 		/**
 		 * @brief Template method: Get a utility component
-		 * @tparam _Ty Utility type
+		 * @tparam T Utility type
 		 * @return Utility instance
 		 * @throws ComponentNotRegisteredException if component is not registered
 		 */
-		template <typename _Ty>
-		std::shared_ptr<_Ty> GetUtility()
+		template <typename T>
+		std::shared_ptr<T> GetUtility()
 		{
-			auto utility = GetUtility(typeid(_Ty));
+			auto utility = GetUtility(typeid(T));
 			if (!utility)
 			{
-				throw ComponentNotRegisteredException(typeid(_Ty).name());
+				throw ComponentNotRegisteredException(typeid(T).name());
 			}
-			return std::dynamic_pointer_cast<_Ty>(utility);
+			return std::dynamic_pointer_cast<T>(utility);
 		}
 
 		/**
 		 * @brief Template method: Register an event handler
-		 * @tparam _Ty Event type, must inherit from IEvent
+		 * @tparam T Event type, must inherit from IEvent
 		 * @param handler Event handler pointer
 		 */
-		template <typename _Ty>
+		template <typename T>
 		void RegisterEvent(ICanHandleEvent* handler)
 		{
 			if (!handler)
 			{
 				throw std::invalid_argument("ICanHandleEvent cannot be null");
 			}
-			static_assert(std::is_base_of_v<IEvent, _Ty>,
-				"_Ty must inherit from IEvent");
-			mEventBus->RegisterEvent(typeid(_Ty), handler);
+			static_assert(std::is_base_of_v<IEvent, T>,
+				"T must inherit from IEvent");
+			mEventBus->RegisterEvent(typeid(T), handler);
 		}
 
 		/**
 		 * @brief Template method: Unregister an event handler
-		 * @tparam _Ty Event type, must inherit from IEvent
+		 * @tparam T Event type, must inherit from IEvent
 		 * @param handler Event handler pointer
 		 */
-		template <typename _Ty>
+		template <typename T>
 		void UnRegisterEvent(ICanHandleEvent* handler)
 		{
 			if (!handler)
 			{
 				throw std::invalid_argument("ICanHandleEvent cannot be null");
 			}
-			static_assert(std::is_base_of_v<IEvent, _Ty>,
-				"_Ty must inherit from IEvent");
-			mEventBus->UnRegisterEvent(typeid(_Ty), handler);
+			static_assert(std::is_base_of_v<IEvent, T>,
+				"T must inherit from IEvent");
+			mEventBus->UnRegisterEvent(typeid(T), handler);
 		}
 
 		/**
 		 * @brief Template method: Send an event
-		 * @tparam _Ty Event type, must inherit from IEvent
+		 * @tparam T Event type, must inherit from IEvent
 		 * @tparam Args Constructor argument types
 		 * @param args Event constructor arguments
 		 */
-		template <typename _Ty, typename... Args>
+		template <typename T, typename... Args>
 		void SendEvent(Args&&... args)
 		{
-			static_assert(std::is_base_of_v<IEvent, _Ty>,
-				"_Ty must inherit from IEvent");
-			this->SendEvent(std::make_shared<_Ty>(std::forward<Args>(args)...));
+			static_assert(std::is_base_of_v<IEvent, T>,
+				"T must inherit from IEvent");
+			this->SendEvent(std::make_shared<T>(std::forward<Args>(args)...));
 		}
 
 		/**
 		 * @brief Template method: Send a command
-		 * @tparam _Ty Command type, must inherit from IJCommand
+		 * @tparam T Command type, must inherit from IJCommand
 		 * @tparam Args Constructor argument types
 		 * @param args Command constructor arguments
 		 */
-		template <typename _Ty, typename... Args>
+		template <typename T, typename... Args>
 		void SendCommand(Args&&... args)
 		{
-			static_assert(std::is_base_of_v<IJCommand, _Ty>,
-				"_Ty must inherit from ICommand");
-			this->SendCommand(std::make_unique<_Ty>(std::forward<Args>(args)...));
+			static_assert(std::is_base_of_v<IJCommand, T>,
+				"T must inherit from ICommand");
+			this->SendCommand(std::make_unique<T>(std::forward<Args>(args)...));
 		}
 
 		/**
 		 * @brief Template method: Send a query and return the result
-		 * @tparam _Ty Query type
+		 * @tparam T Query type
 		 * @param query Query instance
 		 * @return Query result
 		 */
-		template <typename _Ty>
-		auto SendQuery(std::unique_ptr<_Ty> query) -> decltype(query->Do())
+		template <typename T>
+		auto SendQuery(std::unique_ptr<T> query) -> decltype(query->Do())
 		{
-			static_assert(std::is_base_of_v<IQuery<decltype(query->Do())>, _Ty>,
-				"_Ty must inherit from IQuery");
+			static_assert(std::is_base_of_v<IQuery<decltype(query->Do())>, T>,
+				"T must inherit from IQuery");
 
 			if (!query)
 			{
@@ -530,19 +539,19 @@ namespace JFramework
 
 		/**
 		 * @brief Template method: Create and send a query
-		 * @tparam _Ty Query type
+		 * @tparam T Query type
 		 * @tparam Args Constructor argument types
 		 * @param args Query constructor arguments
 		 * @return Query result
 		 */
-		template <typename _Ty, typename... Args>
-		auto SendQuery(Args&&... args) -> decltype(std::declval<_Ty>().Do())
+		template <typename T, typename... Args>
+		auto SendQuery(Args&&... args) -> decltype(std::declval<T>().Do())
 		{
 			static_assert(
-				std::is_base_of_v<IQuery<decltype(std::declval<_Ty>().Do())>, _Ty>,
-				"_Ty must inherit from IQuery");
+				std::is_base_of_v<IQuery<decltype(std::declval<T>().Do())>, T>,
+				"T must inherit from IQuery");
 
-			auto query = std::make_unique<_Ty>(std::forward<Args>(args)...);
+			auto query = std::make_unique<T>(std::forward<Args>(args)...);
 			return this->SendQuery(std::move(query));
 		}
 
@@ -592,7 +601,7 @@ namespace JFramework
 		 */
 		void AddUnRegister(std::shared_ptr<IUnRegister> unRegister)
 		{
-			std::lock_guard<std::mutex> lock(mMutex);
+			std::lock_guard<std::recursive_mutex> lock(mMutex);
 			mUnRegisters.push_back(std::move(unRegister));
 		}
 
@@ -601,7 +610,7 @@ namespace JFramework
 		 */
 		void UnRegister()
 		{
-			std::lock_guard<std::mutex> lock(mMutex);
+			std::lock_guard<std::recursive_mutex> lock(mMutex);
 			for (auto& unRegister : mUnRegisters)
 			{
 				unRegister->UnRegister();
@@ -610,7 +619,7 @@ namespace JFramework
 		}
 
 	protected:
-		std::mutex mMutex;                                      ///< Thread safety mutex
+		std::recursive_mutex mMutex;                                   ///< Thread safety mutex
 		std::vector<std::shared_ptr<IUnRegister>> mUnRegisters; ///< List of unregister objects
 	};
 
@@ -618,12 +627,12 @@ namespace JFramework
 	 * @brief Bindable property unregister handler
 	 *
 	 * Manages observer unregistration for bindable properties
-	 * @tparam _Ty Property value type
+	 * @tparam T Property value type
 	 */
-	template <typename _Ty>
+	template <typename T>
 	class BindablePropertyUnRegister
 		: public IUnRegister,
-		public std::enable_shared_from_this<BindablePropertyUnRegister<_Ty>>
+		public std::enable_shared_from_this<BindablePropertyUnRegister<T>>
 	{
 	public:
 		/**
@@ -633,8 +642,8 @@ namespace JFramework
 		 * @param callback Value change callback function
 		 */
 		BindablePropertyUnRegister(int id,
-			BindableProperty<_Ty>* property,
-			std::function<void(_Ty)> callback)
+			BindableProperty<T>* property,
+			std::function<void(T)> callback)
 			: mProperty(property)
 			, mCallback(std::move(callback))
 			, mId(id)
@@ -660,7 +669,7 @@ namespace JFramework
 		 * @brief Set associated bindable property
 		 * @param property Property pointer
 		 */
-		void SetProperty(BindableProperty<_Ty>* property)
+		void SetProperty(BindableProperty<T>* property)
 		{
 			mProperty = property;
 		}
@@ -681,7 +690,7 @@ namespace JFramework
 		 * @brief Invoke callback function
 		 * @param value New value
 		 */
-		void Invoke(_Ty value)
+		void Invoke(T value)
 		{
 			if (mCallback)
 			{
@@ -693,17 +702,17 @@ namespace JFramework
 		int mId;  ///< Observer ID
 
 	private:
-		BindableProperty<_Ty>* mProperty;    ///< Associated bindable property
-		std::function<void(_Ty)> mCallback;  ///< Value change callback function
+		BindableProperty<T>* mProperty;    ///< Associated bindable property
+		std::function<void(T)> mCallback;  ///< Value change callback function
 	};
 
 	/**
 	 * @brief Bindable property template class
 	 *
 	 * Observable property implementing the observer pattern, supports value change notifications
-	 * @tparam _Ty Property value type
+	 * @tparam T Property value type
 	 */
-	template <typename _Ty>
+	template <typename T>
 	class BindableProperty
 	{
 	public:
@@ -721,14 +730,14 @@ namespace JFramework
 		 */
 		BindableProperty(BindableProperty&& other) noexcept
 		{
-			std::lock_guard<std::mutex> lock(other.mMutex);
+			std::lock_guard<std::recursive_mutex> lock(other.mMutex);
 			mValue = std::move(other.mValue);
 			mObservers = std::move(other.mObservers);
 			mNextId = other.mNextId;
-			for (auto& observer : mObservers)
+			for (auto& pair : mObservers)
 			{
-				if (observer)
-					observer->SetProperty(this);
+				if (pair.second)
+					pair.second->SetProperty(this);
 			}
 			other.mNextId = 0;
 		}
@@ -742,15 +751,15 @@ namespace JFramework
 		{
 			if (this != &other)
 			{
-				std::lock_guard<std::mutex> lock1(mMutex);
-				std::lock_guard<std::mutex> lock2(other.mMutex);
+				std::lock_guard<std::recursive_mutex> lock1(mMutex);
+				std::lock_guard<std::recursive_mutex> lock2(other.mMutex);
 				mValue = std::move(other.mValue);
 				mObservers = std::move(other.mObservers);
 				mNextId = other.mNextId;
-				for (auto& observer : mObservers)
+				for (auto& pair : mObservers)
 				{
-					if (observer)
-						observer->SetProperty(this);
+					if (pair.second)
+						pair.second->SetProperty(this);
 				}
 				other.mNextId = 0;
 			}
@@ -758,10 +767,19 @@ namespace JFramework
 		}
 
 		/**
-		 * @brief Constructor with initial value
+		 * @brief Constructor with initial value (copy)
 		 * @param value Initial value
 		 */
-		explicit BindableProperty(const _Ty& value)
+		explicit BindableProperty(const T& value)
+			: mValue(value)
+		{
+		}
+
+		/**
+		 * @brief Constructor with initial value (move)
+		 * @param value Initial value
+		 */
+		explicit BindableProperty(T&& value)
 			: mValue(std::move(value))
 		{
 		}
@@ -771,7 +789,7 @@ namespace JFramework
 		 */
 		~BindableProperty()
 		{
-			std::lock_guard<std::mutex> lock(mMutex);
+			std::lock_guard<std::recursive_mutex> lock(mMutex);
 			mObservers.clear();
 		}
 
@@ -779,27 +797,27 @@ namespace JFramework
 		 * @brief Get current value
 		 * @return Current value
 		 */
-		const _Ty& GetValue() const { return mValue; }
+		const T& GetValue() const { return mValue; }
 
 		/**
 		 * @brief Set new value and notify observers
 		 * @param newValue New value
 		 */
-		void SetValue(const _Ty& newValue)
+		void SetValue(const T& newValue)
 		{
-			std::lock_guard<std::mutex> lock(mMutex);
+			std::lock_guard<std::recursive_mutex> lock(mMutex);
 			if (mValue == newValue)
 				return;
 			mValue = newValue;
-			for (auto& observer : mObservers)
+			for (auto& pair : mObservers)
 			{
 				try
 				{
-					observer->Invoke(mValue);
+					pair.second->Invoke(mValue);
 				}
-				catch (const std::exception&)
+				catch (const std::exception& e)
 				{
-
+					std::cerr << "[BindableProperty] Exception in observer callback: " << e.what() << std::endl;
 				}
 			}
 		}
@@ -808,9 +826,9 @@ namespace JFramework
 		 * @brief Set new value without triggering notification
 		 * @param newValue New value
 		 */
-		void SetValueWithoutEvent(const _Ty& newValue)
+		void SetValueWithoutEvent(const T& newValue)
 		{
-			std::lock_guard<std::mutex> lock(mMutex);
+			std::lock_guard<std::recursive_mutex> lock(mMutex);
 			mValue = newValue;
 		}
 
@@ -819,8 +837,8 @@ namespace JFramework
 		 * @param onValueChanged Value change callback function
 		 * @return Unregister object
 		 */
-		std::shared_ptr<BindablePropertyUnRegister<_Ty>> RegisterWithInitValue(
-			std::function<void(const _Ty&)> onValueChanged)
+		std::shared_ptr<BindablePropertyUnRegister<T>> RegisterWithInitValue(
+			std::function<void(const T&)> onValueChanged)
 		{
 			onValueChanged(mValue);
 			return Register(std::move(onValueChanged));
@@ -831,13 +849,13 @@ namespace JFramework
 		 * @param onValueChanged Value change callback function
 		 * @return Unregister object
 		 */
-		std::shared_ptr<BindablePropertyUnRegister<_Ty>> Register(
-			std::function<void(const _Ty&)> onValueChanged)
+		std::shared_ptr<BindablePropertyUnRegister<T>> Register(
+			std::function<void(const T&)> onValueChanged)
 		{
-			std::lock_guard<std::mutex> lock(mMutex);
-			auto unRegister = std::make_shared<BindablePropertyUnRegister<_Ty>>(
+			std::lock_guard<std::recursive_mutex> lock(mMutex);
+			auto unRegister = std::make_shared<BindablePropertyUnRegister<T>>(
 				mNextId++, this, std::move(onValueChanged));
-			mObservers.push_back(unRegister);
+			mObservers[unRegister->GetId()] = unRegister;
 			return unRegister;
 		}
 
@@ -847,37 +865,40 @@ namespace JFramework
 		 */
 		void UnRegister(int id)
 		{
-			std::lock_guard<std::mutex> lock(mMutex);
-			for (size_t i = 0; i < mObservers.size(); i++)
-			{
-				auto& observer = mObservers[i];
-				if (observer && observer->GetId() == id)
-				{
-					mObservers.erase(mObservers.begin() + i);
-					break;
-				}
-			}
+			std::lock_guard<std::recursive_mutex> lock(mMutex);
+			mObservers.erase(id);
 		}
 
 		/// Type conversion operator
-		operator _Ty() const { return mValue; }
+		operator T() const { return mValue; }
 
 		/**
-		 * @brief Assignment operator
+		 * @brief Copy assignment operator
 		 * @param newValue New value
 		 * @return Reference to this object
 		 */
-		BindableProperty<_Ty>& operator=(const _Ty& newValue)
+		BindableProperty<T>& operator=(const T& newValue)
+		{
+			SetValue(newValue);
+			return *this;
+		}
+
+		/**
+		 * @brief Move assignment operator
+		 * @param newValue New value
+		 * @return Reference to this object
+		 */
+		BindableProperty<T>& operator=(T&& newValue)
 		{
 			SetValue(std::move(newValue));
 			return *this;
 		}
 
 	private:
-		std::mutex mMutex;       ///< Thread safety mutex
+		std::recursive_mutex mMutex;       ///< Thread safety mutex
 		int mNextId = 0;         ///< Next observer ID
-		_Ty mValue;              ///< Property value
-		std::vector<std::shared_ptr<BindablePropertyUnRegister<_Ty>>> mObservers; ///< Observer list
+		T mValue;              ///< Property value
+		std::unordered_map<int, std::shared_ptr<BindablePropertyUnRegister<T>>> mObservers; ///< Observer list
 	};
 
 	// ============================== Capability Interfaces ==============================
@@ -964,22 +985,22 @@ namespace JFramework
 	public:
 		/**
 		 * @brief Get a model component
-		 * @tparam _Ty Model type
+		 * @tparam T Model type
 		 * @return Model instance
 		 */
-		template <typename _Ty>
-		std::shared_ptr<_Ty> GetModel()
+		template <typename T>
+		std::shared_ptr<T> GetModel()
 		{
-			static_assert(std::is_base_of_v<IModel, _Ty>,
-				"_Ty must inherit from IModel");
+			static_assert(std::is_base_of_v<IModel, T>,
+				"T must inherit from IModel");
 
 			auto arch = GetArchitecture().lock();
 			if (!arch)
 			{
-				throw ArchitectureNotSetException(typeid(_Ty).name());
+				throw ArchitectureNotSetException(typeid(T).name());
 			}
 
-			auto model = arch->GetModel<_Ty>();
+			auto model = arch->GetModel<T>();
 			return model;
 		}
 	};
@@ -994,22 +1015,22 @@ namespace JFramework
 	public:
 		/**
 		 * @brief Get a system component
-		 * @tparam _Ty System type
+		 * @tparam T System type
 		 * @return System instance
 		 */
-		template <typename _Ty>
-		std::shared_ptr<_Ty> GetSystem()
+		template <typename T>
+		std::shared_ptr<T> GetSystem()
 		{
-			static_assert(std::is_base_of_v<ISystem, _Ty>,
-				"_Ty must inherit from ISystem");
+			static_assert(std::is_base_of_v<ISystem, T>,
+				"T must inherit from ISystem");
 
 			auto arch = GetArchitecture().lock();
 			if (!arch)
 			{
-				throw ArchitectureNotSetException(typeid(_Ty).name());
+				throw ArchitectureNotSetException(typeid(T).name());
 			}
 
-			auto system = arch->GetSystem<_Ty>();
+			auto system = arch->GetSystem<T>();
 			return system;
 		}
 	};
@@ -1024,22 +1045,22 @@ namespace JFramework
 	public:
 		/**
 		 * @brief Send a command
-		 * @tparam _Ty Command type
+		 * @tparam T Command type
 		 * @tparam Args Constructor argument types
 		 * @param args Command constructor arguments
 		 */
-		template <typename _Ty, typename... Args>
+		template <typename T, typename... Args>
 		void SendCommand(Args&&... args)
 		{
-			static_assert(std::is_base_of_v<IJCommand, _Ty>,
-				"_Ty must inherit from IJCommand");
+			static_assert(std::is_base_of_v<IJCommand, T>,
+				"T must inherit from IJCommand");
 
 			auto arch = GetArchitecture().lock();
 			if (!arch)
 			{
-				throw ArchitectureNotSetException(typeid(_Ty).name());
+				throw ArchitectureNotSetException(typeid(T).name());
 			}
-			arch->SendCommand<_Ty>(std::forward<Args>(args)...);
+			arch->SendCommand<T>(std::forward<Args>(args)...);
 		}
 
 		/**
@@ -1068,38 +1089,38 @@ namespace JFramework
 	public:
 		/**
 		 * @brief Send a query
-		 * @tparam _Ty Query type
+		 * @tparam T Query type
 		 * @tparam Args Constructor argument types
 		 * @param args Query constructor arguments
 		 * @return Query result
 		 */
-		template <typename _Ty, typename... Args>
-		auto SendQuery(Args&&... args) -> decltype(std::declval<_Ty>().Do())
+		template <typename T, typename... Args>
+		auto SendQuery(Args&&... args) -> decltype(std::declval<T>().Do())
 		{
 			auto arch = GetArchitecture().lock();
 			if (!arch)
 			{
-				throw ArchitectureNotSetException(typeid(_Ty).name());
+				throw ArchitectureNotSetException(typeid(T).name());
 			}
 
-			auto result = arch->SendQuery<_Ty>(std::forward<Args>(args)...);
+			auto result = arch->SendQuery<T>(std::forward<Args>(args)...);
 			return result;
 		}
 
 		/**
 		 * @brief Send a query
-		 * @tparam _Ty Query type
+		 * @tparam T Query type
 		 * @param query Query instance
 		 * @return Query result
 		 */
-		template <typename _Ty>
-		auto SendQuery(std::unique_ptr<_Ty> query)
-			-> decltype(std::declval<_Ty>().Do())
+		template <typename T>
+		auto SendQuery(std::unique_ptr<T> query)
+			-> decltype(std::declval<T>().Do())
 		{
 			auto arch = GetArchitecture().lock();
 			if (!arch)
 			{
-				throw ArchitectureNotSetException(typeid(_Ty).name());
+				throw ArchitectureNotSetException(typeid(T).name());
 			}
 
 			auto result = arch->SendQuery(std::move(query));
@@ -1117,22 +1138,22 @@ namespace JFramework
 	public:
 		/**
 		 * @brief Get a utility component
-		 * @tparam _Ty Utility type
+		 * @tparam T Utility type
 		 * @return Utility instance
 		 */
-		template <typename _Ty>
-		std::shared_ptr<_Ty> GetUtility()
+		template <typename T>
+		std::shared_ptr<T> GetUtility()
 		{
-			static_assert(std::is_base_of_v<IUtility, _Ty>,
-				"_Ty must inherit from IUtility");
+			static_assert(std::is_base_of_v<IUtility, T>,
+				"T must inherit from IUtility");
 
 			auto arch = GetArchitecture().lock();
 			if (!arch)
 			{
-				throw ArchitectureNotSetException(typeid(_Ty).name());
+				throw ArchitectureNotSetException(typeid(T).name());
 			}
 
-			auto utility = arch->GetUtility<_Ty>();
+			auto utility = arch->GetUtility<T>();
 			return utility;
 		}
 	};
@@ -1149,22 +1170,22 @@ namespace JFramework
 	public:
 		/**
 		 * @brief Send an event
-		 * @tparam _Ty Event type
+		 * @tparam T Event type
 		 * @tparam Args Constructor argument types
 		 * @param args Event constructor arguments
 		 */
-		template <typename _Ty, typename... Args>
+		template <typename T, typename... Args>
 		void SendEvent(Args&&... args)
 		{
-			static_assert(std::is_base_of_v<IEvent, _Ty>,
-				"_Ty must inherit from IEvent");
+			static_assert(std::is_base_of_v<IEvent, T>,
+				"T must inherit from IEvent");
 
 			auto arch = GetArchitecture().lock();
 			if (!arch)
 			{
-				throw ArchitectureNotSetException(typeid(_Ty).name());
+				throw ArchitectureNotSetException(typeid(T).name());
 			}
-			arch->SendEvent<_Ty>(std::forward<Args>(args)...);
+			arch->SendEvent<T>(std::forward<Args>(args)...);
 		}
 	};
 
@@ -1180,42 +1201,42 @@ namespace JFramework
 
 		/**
 		 * @brief Register an event handler
-		 * @tparam _Ty Event type
+		 * @tparam T Event type
 		 * @param handler Event handler
 		 */
-		template <typename _Ty>
+		template <typename T>
 		void RegisterEvent(ICanHandleEvent* handler)
 		{
-			static_assert(std::is_base_of_v<IEvent, _Ty>,
-				"_Ty must inherit from IEvent");
+			static_assert(std::is_base_of_v<IEvent, T>,
+				"T must inherit from IEvent");
 
 			auto arch = GetArchitecture().lock();
 			if (!arch)
 			{
-				throw ArchitectureNotSetException(typeid(_Ty).name());
+				throw ArchitectureNotSetException(typeid(T).name());
 			}
 
-			arch->RegisterEvent<_Ty>(handler);
+			arch->RegisterEvent<T>(handler);
 		}
 
 		/**
 		 * @brief Unregister an event handler
-		 * @tparam _Ty Event type
+		 * @tparam T Event type
 		 * @param handler Event handler
 		 */
-		template <typename _Ty>
+		template <typename T>
 		void UnRegisterEvent(ICanHandleEvent* handler)
 		{
-			static_assert(std::is_base_of_v<IEvent, _Ty>,
-				"_Ty must inherit from IEvent");
+			static_assert(std::is_base_of_v<IEvent, T>,
+				"T must inherit from IEvent");
 
 			auto arch = GetArchitecture().lock();
 			if (!arch)
 			{
-				throw ArchitectureNotSetException(typeid(_Ty).name());
+				throw ArchitectureNotSetException(typeid(T).name());
 			}
 
-			arch->UnRegisterEvent<_Ty>(handler);
+			arch->UnRegisterEvent<T>(handler);
 		}
 	};
 
@@ -1294,9 +1315,9 @@ namespace JFramework
 	 * @brief Query interface
 	 *
 	 * Base interface for the query pattern, used to encapsulate data query requests
-	 * @tparam _Ty Query result type
+	 * @tparam T Query result type
 	 */
-	template <typename _Ty>
+	template <typename T>
 	class IQuery : public ICanSetArchitecture,
 		public ICanGetModel,
 		public ICanGetSystem,
@@ -1309,7 +1330,7 @@ namespace JFramework
 		 * @brief Execute the query
 		 * @return Query result
 		 */
-		virtual _Ty Do() = 0;
+		virtual T Do() = 0;
 	};
 
 	/**
@@ -1335,22 +1356,22 @@ namespace JFramework
 	public:
 		/**
 		 * @brief Register a component
-		 * @tparam _Ty Component type
+		 * @tparam T Component type
 		 * @tparam TBase Component base type
 		 * @param typeId Type index
 		 * @param component Component instance
 		 */
-		template <typename _Ty, typename TBase>
+		template <typename T, typename TBase>
 		void Register(std::type_index typeId, std::shared_ptr<TBase> component)
 		{
-			static_assert(std::is_base_of_v<TBase, _Ty>, "_Ty must inherit from TBase");
+			static_assert(std::is_base_of_v<TBase, T>, "T must inherit from TBase");
 			auto& container = GetContainer(ContainerTypeTag<TBase> {});
-			std::lock_guard<std::mutex> lock(GetMutex(MutexTypeTag<TBase> {}));
+			std::lock_guard<std::recursive_mutex> lock(GetMutex(MutexTypeTag<TBase> {}));
 
-			if (container.find(typeId.name()) != container.end())
+			if (container.find(typeId) != container.end())
 				throw ComponentAlreadyRegisteredException(typeId.name());
 
-			container[typeId.name()] = std::static_pointer_cast<TBase>(component);
+			container[typeId] = std::static_pointer_cast<TBase>(component);
 		}
 
 		/**
@@ -1363,8 +1384,8 @@ namespace JFramework
 		std::shared_ptr<TBase> Get(std::type_index typeId)
 		{
 			auto& container = GetContainer(ContainerTypeTag<TBase> {});
-			std::lock_guard<std::mutex> lock(GetMutex(MutexTypeTag<TBase> {}));
-			auto it = container.find(typeId.name());
+			std::lock_guard<std::recursive_mutex> lock(GetMutex(MutexTypeTag<TBase> {}));
+			auto it = container.find(typeId);
 			return it != container.end() ? it->second : nullptr;
 		}
 
@@ -1377,7 +1398,7 @@ namespace JFramework
 		std::vector<std::shared_ptr<TBase>> GetAll()
 		{
 			auto& container = GetContainer(ContainerTypeTag<TBase> {});
-			std::lock_guard<std::mutex> lock(GetMutex(MutexTypeTag<TBase> {}));
+			std::lock_guard<std::recursive_mutex> lock(GetMutex(MutexTypeTag<TBase> {}));
 			std::vector<std::shared_ptr<TBase>> result;
 			for (auto& pair : container)
 			{
@@ -1391,12 +1412,12 @@ namespace JFramework
 		 */
 		void Clear()
 		{
-			std::lock_guard<std::mutex> lock1(mModelMutex);
-			std::lock_guard<std::mutex> lock2(mSystemMutex);
-			std::lock_guard<std::mutex> lock3(mUtilityMutex);
+			std::lock_guard<std::recursive_mutex> lock1(mModelMutex);
+			std::lock_guard<std::recursive_mutex> lock2(mSystemMutex);
+			std::lock_guard<std::recursive_mutex> lock3(mUtilityMutex);
 			mModels.clear();
 			mSystems.clear();
-			mUtilitys.clear();
+			mUtilities.clear();
 		}
 
 	private:
@@ -1406,7 +1427,7 @@ namespace JFramework
 
 		auto& GetContainer(ContainerTypeTag<IModel>) { return mModels; }
 		auto& GetContainer(ContainerTypeTag<ISystem>) { return mSystems; }
-		auto& GetContainer(ContainerTypeTag<IUtility>) { return mUtilitys; }
+		auto& GetContainer(ContainerTypeTag<IUtility>) { return mUtilities; }
 
 		/// Mutex type tag
 		template <typename>
@@ -1416,13 +1437,13 @@ namespace JFramework
 		auto& GetMutex(MutexTypeTag<ISystem>) { return mSystemMutex; }
 		auto& GetMutex(MutexTypeTag<IUtility>) { return mUtilityMutex; }
 
-		std::unordered_map<std::string, std::shared_ptr<IModel>> mModels;     ///< Model container
-		std::unordered_map<std::string, std::shared_ptr<ISystem>> mSystems;   ///< System container
-		std::unordered_map<std::string, std::shared_ptr<IUtility>> mUtilitys; ///< Utility container
+		std::unordered_map<std::type_index, std::shared_ptr<IModel>> mModels;     ///< Model container
+		std::unordered_map<std::type_index, std::shared_ptr<ISystem>> mSystems;   ///< System container
+		std::unordered_map<std::type_index, std::shared_ptr<IUtility>> mUtilities; ///< Utility container
 
-		std::mutex mModelMutex;   ///< Model container mutex
-		std::mutex mSystemMutex;  ///< System container mutex
-		std::mutex mUtilityMutex; ///< Utility container mutex
+		std::recursive_mutex mModelMutex;   ///< Model container mutex
+		std::recursive_mutex mSystemMutex;  ///< System container mutex
+		std::recursive_mutex mUtilityMutex; ///< Utility container mutex
 	};
 
 	/**
@@ -1605,14 +1626,14 @@ namespace JFramework
 
 			this->OnDeinit();
 
-			for (auto& model : mContainer->GetAll<IModel>())
-			{
-				UnInitializeComponent(model);
-			}
-
 			for (auto& system : mContainer->GetAll<ISystem>())
 			{
 				UnInitializeComponent(system);
+			}
+
+			for (auto& model : mContainer->GetAll<IModel>())
+			{
+				UnInitializeComponent(model);
 			}
 		}
 
@@ -1673,13 +1694,13 @@ namespace JFramework
 	private:
 		/**
 		 * @brief Initialize a component
-		 * @tparam _Ty Component type
+		 * @tparam T Component type
 		 * @param component Component instance
 		 */
-		template <typename _Ty>
-		void InitializeComponent(std::shared_ptr<_Ty> component)
+		template <typename T>
+		void InitializeComponent(std::shared_ptr<T> component)
 		{
-			static_assert(std::is_base_of_v<ICanInit, _Ty>,
+			static_assert(std::is_base_of_v<ICanInit, T>,
 				"Component must implement ICanInit");
 
 			if (!component->IsInitialized())
@@ -1691,13 +1712,13 @@ namespace JFramework
 
 		/**
 		 * @brief Deinitialize a component
-		 * @tparam _Ty Component type
+		 * @tparam T Component type
 		 * @param component Component instance
 		 */
-		template <typename _Ty>
-		void UnInitializeComponent(std::shared_ptr<_Ty> component)
+		template <typename T>
+		void UnInitializeComponent(std::shared_ptr<T> component)
 		{
-			static_assert(std::is_base_of_v<ICanInit, _Ty>,
+			static_assert(std::is_base_of_v<ICanInit, T>,
 				"Component must implement ICanInit");
 
 			if (component->IsInitialized())
@@ -1875,7 +1896,7 @@ namespace JFramework
 	 */
 	class AbstractController : public IController
 	{
-	private:
+	public:
 		/**
 		 * @brief Handle event
 		 * @param event Event instance
@@ -1894,10 +1915,10 @@ namespace JFramework
 	 * @brief Abstract query base class
 	 *
 	 * Provides basic query implementation, subclasses only need to implement OnDo method
-	 * @tparam _Ty Query result type
+	 * @tparam T Query result type
 	 */
-	template <typename _Ty>
-	class AbstractQuery : public IQuery<_Ty>
+	template <typename T>
+	class AbstractQuery : public IQuery<T>
 	{
 	private:
 		std::weak_ptr<IArchitecture> mArchitecture; ///< Weak reference to architecture
@@ -1916,7 +1937,7 @@ namespace JFramework
 		 * @brief Execute the query
 		 * @return Query result
 		 */
-		_Ty Do() final { return OnDo(); }
+		T Do() final { return OnDo(); }
 
 	public:
 		/**
@@ -1933,7 +1954,7 @@ namespace JFramework
 		 * @brief Query execution implementation
 		 * @return Query result
 		 */
-		virtual _Ty OnDo() = 0;
+		virtual T OnDo() = 0;
 	};
 }; // namespace JFramework
 

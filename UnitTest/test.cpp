@@ -5,7 +5,8 @@
 
 using namespace JFramework;
 
-// ========== 异常测试 ==========
+// ============================== Exception Tests ==============================
+
 TEST(ExceptionTest, ArchitectureNotSetException)
 {
 	EXPECT_THROW(throw ArchitectureNotSetException("TestType"), ArchitectureNotSetException);
@@ -21,7 +22,26 @@ TEST(ExceptionTest, ComponentAlreadyRegisteredException)
 	EXPECT_THROW(throw ComponentAlreadyRegisteredException("TestType"), ComponentAlreadyRegisteredException);
 }
 
-// ========== EventBus 测试 ==========
+TEST(ExceptionTest, CommandExecuteException)
+{
+	EXPECT_THROW(throw CommandExecuteException("TestCommand"), CommandExecuteException);
+}
+
+TEST(ExceptionTest, FrameworkExceptionInheritance)
+{
+	EXPECT_THROW(throw ArchitectureNotSetException("T"), FrameworkException);
+	EXPECT_THROW(throw ComponentNotRegisteredException("T"), FrameworkException);
+	EXPECT_THROW(throw ComponentAlreadyRegisteredException("T"), FrameworkException);
+	EXPECT_THROW(throw CommandExecuteException("T"), FrameworkException);
+}
+
+TEST(ExceptionTest, ArchitectureNotSetExceptionIsExplicit)
+{
+	EXPECT_TRUE((std::is_constructible<ArchitectureNotSetException, const std::string&>::value));
+}
+
+// ============================== EventBus Tests ==============================
+
 class TestEvent : public IEvent
 {
 };
@@ -113,7 +133,6 @@ TEST(EventBusTest, DuplicateRegisterHandler)
 	bus.RegisterEvent(typeid(TestEvent), &handler);
 	bus.RegisterEvent(typeid(TestEvent), &handler);
 	bus.SendEvent(std::make_shared<TestEvent>());
-	// handler 被调用两次
 	EXPECT_EQ(handler.count, 2);
 }
 
@@ -133,7 +152,6 @@ TEST(EventBusTest, UnRegisterNotRegisteredHandler)
 {
 	EventBus bus;
 	TestHandler handler;
-	// 未注册直接注销，不应崩溃
 	EXPECT_NO_THROW(bus.UnRegisterEvent(typeid(TestEvent), &handler));
 }
 
@@ -143,7 +161,6 @@ TEST(EventBusTest, UnRegisterTwice)
 	TestHandler handler;
 	bus.RegisterEvent(typeid(TestEvent), &handler);
 	bus.UnRegisterEvent(typeid(TestEvent), &handler);
-	// 再次注销，不应崩溃
 	EXPECT_NO_THROW(bus.UnRegisterEvent(typeid(TestEvent), &handler));
 }
 
@@ -152,23 +169,31 @@ TEST(EventBusTest, ConcurrentRegisterAndSend)
 	EventBus bus;
 	CountingHandler handler;
 	auto reg = [&]
-		{
-			for (int i = 0; i < 100; ++i)
-				bus.RegisterEvent(typeid(TestEvent), &handler);
-		};
+	{
+		for (int i = 0; i < 100; ++i)
+			bus.RegisterEvent(typeid(TestEvent), &handler);
+	};
 	auto send = [&]
-		{
-			for (int i = 0; i < 100; ++i)
-				bus.SendEvent(std::make_shared<TestEvent>());
-		};
+	{
+		for (int i = 0; i < 100; ++i)
+			bus.SendEvent(std::make_shared<TestEvent>());
+	};
 	std::thread t1(reg), t2(send);
 	t1.join();
 	t2.join();
-	// 只保证不崩溃
 	SUCCEED();
 }
 
-// ========== BindableProperty 测试 ==========
+TEST(EventBusTest, ExceptionHandlerLogsButDoesNotCrash)
+{
+	EventBus bus;
+	ExceptionHandler exHandler;
+	bus.RegisterEvent(typeid(TestEvent), &exHandler);
+	EXPECT_NO_THROW(bus.SendEvent(std::make_shared<TestEvent>()));
+	EXPECT_TRUE(exHandler.called);
+}
+
+// ============================== BindableProperty Tests ==============================
 
 struct CustomType
 {
@@ -200,7 +225,7 @@ TEST(BindablePropertyTest, RegisterAndTrigger)
 	EXPECT_EQ(observed, 5);
 	unreg->UnRegister();
 	prop.SetValue(10);
-	EXPECT_EQ(observed, 5); // 不再更新
+	EXPECT_EQ(observed, 5);
 }
 
 TEST(BindablePropertyTest, RegisterWithInitValue)
@@ -209,6 +234,16 @@ TEST(BindablePropertyTest, RegisterWithInitValue)
 	int observed = 0;
 	auto unreg = prop.RegisterWithInitValue([&](const int& v) { observed = v; });
 	EXPECT_EQ(observed, 7);
+}
+
+TEST(BindablePropertyTest, RegisterWithInitValueOnlyTriggersSelf)
+{
+	BindableProperty<int> prop(10);
+	int v1 = 0, v2 = 0;
+	auto u1 = prop.Register([&](const int& val) { v1 = val; });
+	auto u2 = prop.RegisterWithInitValue([&](const int& val) { v2 = val; });
+	EXPECT_EQ(v2, 10);
+	EXPECT_EQ(v1, 0);
 }
 
 TEST(BindablePropertyTest, MultipleObservers)
@@ -242,7 +277,7 @@ TEST(BindablePropertyTest, UnRegisterStopsNotification)
 	EXPECT_EQ(v, 5);
 	u->UnRegister();
 	prop.SetValue(10);
-	EXPECT_EQ(v, 5); // 不再更新
+	EXPECT_EQ(v, 5);
 }
 
 TEST(BindablePropertyTest, DestructorCleansObservers)
@@ -253,7 +288,6 @@ TEST(BindablePropertyTest, DestructorCleansObservers)
 		auto u = prop.Register([&](const int& val) { v = val; });
 		prop.SetValue(2);
 		EXPECT_EQ(v, 2);
-		// prop 离开作用域析构，不应崩溃
 	}
 	SUCCEED();
 }
@@ -264,7 +298,6 @@ TEST(BindablePropertyTest, CallbackThrowsException)
 	int v = 0;
 	auto u1 = prop.Register([&](const int&) { throw std::runtime_error("fail"); });
 	auto u2 = prop.Register([&](const int& val) { v = val; });
-	// 即使有回调抛异常，其他回调仍然被调用
 	EXPECT_NO_THROW(prop.SetValue(123));
 	EXPECT_EQ(v, 123);
 }
@@ -281,10 +314,9 @@ TEST(BindablePropertyTest, UnRegisterWhenObjectDestroyed)
 		prop.SetValue(7);
 		EXPECT_EQ(v, 7);
 	}
-	// trigger析构时自动注销
 	trigger.UnRegister();
 	prop.SetValue(8);
-	EXPECT_EQ(v, 7); // 不再更新
+	EXPECT_EQ(v, 7);
 }
 
 TEST(BindablePropertyTest, OperatorAssign)
@@ -297,7 +329,119 @@ TEST(BindablePropertyTest, OperatorAssign)
 	EXPECT_EQ(v, 99);
 }
 
-// ========== UnRegisterTrigger 测试 ==========
+TEST(BindablePropertyTest, CustomTypeBind)
+{
+	BindableProperty<CustomType> prop({ 1 });
+	int observed = 0;
+	auto u = prop.Register([&](const CustomType& v) { observed = v.x; });
+	prop.SetValue({ 42 });
+	EXPECT_EQ(observed, 42);
+}
+
+TEST(BindablePropertyTest, MoveAssignAndMoveConstruct)
+{
+	BindableProperty<int> prop1(1);
+	prop1.SetValue(2);
+	BindableProperty<int> prop2(std::move(prop1));
+	EXPECT_EQ(prop2.GetValue(), 2);
+	BindableProperty<int> prop3;
+	prop3 = std::move(prop2);
+	EXPECT_EQ(prop3.GetValue(), 2);
+}
+
+TEST(BindablePropertyTest, DefaultConstructor)
+{
+	BindableProperty<int> prop;
+	int observed = 0;
+	auto u = prop.Register([&](const int& v) { observed = v; });
+	prop.SetValue(42);
+	EXPECT_EQ(prop.GetValue(), 42);
+	EXPECT_EQ(observed, 42);
+}
+
+TEST(BindablePropertyTest, ImplicitConversion)
+{
+	BindableProperty<int> prop(42);
+	int value = prop;
+	EXPECT_EQ(value, 42);
+}
+
+TEST(BindablePropertyTest, SetValueSameValueSkipsNotification)
+{
+	BindableProperty<int> prop(5);
+	int callCount = 0;
+	auto u = prop.Register([&](const int&) { ++callCount; });
+	prop.SetValue(5);
+	EXPECT_EQ(callCount, 0);
+	prop.SetValue(10);
+	EXPECT_EQ(callCount, 1);
+}
+
+TEST(BindablePropertyTest, MoveConstructorObserversWork)
+{
+	BindableProperty<int> prop1(0);
+	int observed = 0;
+	auto u = prop1.Register([&](const int& v) { observed = v; });
+	BindableProperty<int> prop2(std::move(prop1));
+	prop2.SetValue(99);
+	EXPECT_EQ(observed, 99);
+}
+
+TEST(BindablePropertyTest, MoveAssignmentObserversWork)
+{
+	BindableProperty<int> prop1(0);
+	int observed = 0;
+	auto u = prop1.Register([&](const int& v) { observed = v; });
+	BindableProperty<int> prop2;
+	prop2 = std::move(prop1);
+	prop2.SetValue(88);
+	EXPECT_EQ(observed, 88);
+}
+
+TEST(BindablePropertyTest, MoveValueConstructor)
+{
+	BindableProperty<std::string> prop(std::string("hello"));
+	EXPECT_EQ(prop.GetValue(), "hello");
+}
+
+TEST(BindablePropertyTest, MoveValueOperatorAssign)
+{
+	BindableProperty<std::string> prop("old");
+	int callCount = 0;
+	auto u = prop.Register([&](const std::string&) { ++callCount; });
+	prop = std::string("new");
+	EXPECT_EQ(prop.GetValue(), "new");
+	EXPECT_EQ(callCount, 1);
+}
+
+TEST(BindablePropertyTest, RecursiveSetValueInCallback)
+{
+	BindableProperty<int> propA(0);
+	BindableProperty<int> propB(0);
+
+	propA.Register([&](const int& v)
+	{
+		if (v == 1)
+		{
+			propB.SetValue(2);
+		}
+	});
+
+	propB.Register([&](const int& v)
+	{
+		if (v == 2)
+		{
+			propA.SetValue(3);
+		}
+	});
+
+	EXPECT_NO_THROW(propA.SetValue(1));
+	EXPECT_EQ(propA.GetValue(), 3);
+	EXPECT_EQ(propB.GetValue(), 2);
+}
+
+// ============================== UnRegisterTrigger Tests ==============================
+
 class DummyUnRegister : public IUnRegister
 {
 public:
@@ -314,7 +458,45 @@ TEST(UnRegisterTriggerTest, AddAndUnRegister)
 	EXPECT_TRUE(dummy->called);
 }
 
-// ========== ICanInit 测试 ==========
+TEST(UnRegisterTriggerTest, DestructorAutoUnRegister)
+{
+	auto dummy = std::make_shared<DummyUnRegister>();
+	{
+		UnRegisterTrigger trigger;
+		trigger.AddUnRegister(dummy);
+	}
+	EXPECT_TRUE(dummy->called);
+}
+
+TEST(UnRegisterTriggerTest, AddMultipleAndUnRegister)
+{
+	UnRegisterTrigger trigger;
+	auto d1 = std::make_shared<DummyUnRegister>();
+	auto d2 = std::make_shared<DummyUnRegister>();
+	auto d3 = std::make_shared<DummyUnRegister>();
+	trigger.AddUnRegister(d1);
+	trigger.AddUnRegister(d2);
+	trigger.AddUnRegister(d3);
+	trigger.UnRegister();
+	EXPECT_TRUE(d1->called);
+	EXPECT_TRUE(d2->called);
+	EXPECT_TRUE(d3->called);
+}
+
+TEST(UnRegisterTriggerTest, UnRegisterMultipleTimes)
+{
+	UnRegisterTrigger trigger;
+	auto dummy = std::make_shared<DummyUnRegister>();
+	trigger.AddUnRegister(dummy);
+	trigger.UnRegister();
+	EXPECT_TRUE(dummy->called);
+	dummy->called = false;
+	trigger.UnRegister();
+	EXPECT_FALSE(dummy->called);
+}
+
+// ============================== ICanInit Tests ==============================
+
 class DummyCanInit : public ICanInit
 {
 public:
@@ -334,7 +516,8 @@ TEST(ICanInitTest, InitAndDeinit)
 	EXPECT_TRUE(obj.IsInitialized());
 }
 
-// ========== IOCContainer 测试 ==========
+// ============================== IOCContainer Tests ==============================
+
 class DummyModel : public IModel
 {
 public:
@@ -477,6 +660,20 @@ TEST(IOCContainerTest, GetUnregisteredReturnsNull)
 	EXPECT_EQ(got, nullptr);
 }
 
+TEST(IOCContainerTest, GetUnregisteredSystemReturnsNull)
+{
+	IOCContainer container;
+	auto got = container.Get<ISystem>(typeid(DummySystem));
+	EXPECT_EQ(got, nullptr);
+}
+
+TEST(IOCContainerTest, GetUnregisteredUtilityReturnsNull)
+{
+	IOCContainer container;
+	auto got = container.Get<IUtility>(typeid(DummyUtility));
+	EXPECT_EQ(got, nullptr);
+}
+
 TEST(IOCContainerTest, ClearMultipleTimes)
 {
 	IOCContainer container;
@@ -485,7 +682,20 @@ TEST(IOCContainerTest, ClearMultipleTimes)
 	SUCCEED();
 }
 
-// ========== IArchitecture 测试 ==========
+TEST(IOCContainerTest, TypeIndexAsKey)
+{
+	IOCContainer container;
+	auto model = std::make_shared<DummyModel>();
+	auto sys = std::make_shared<DummySystem>();
+	container.Register<DummyModel, IModel>(typeid(DummyModel), model);
+	container.Register<DummySystem, ISystem>(typeid(DummySystem), sys);
+	EXPECT_EQ(container.Get<IModel>(typeid(DummyModel)), model);
+	EXPECT_EQ(container.Get<ISystem>(typeid(DummySystem)), sys);
+	EXPECT_EQ(container.Get<IModel>(typeid(DummySystem)), nullptr);
+	EXPECT_EQ(container.Get<ISystem>(typeid(DummyModel)), nullptr);
+}
+
+// ============================== Architecture Tests ==============================
 
 class TestModel : public IModel
 {
@@ -551,7 +761,6 @@ TEST(ArchitectureTest, GetUnregisteredThrows)
 	EXPECT_THROW(arch->GetUtility<TestUtility>(), ComponentNotRegisteredException);
 }
 
-// 事件注册与分发
 class MyEvent : public IEvent
 {
 };
@@ -561,6 +770,7 @@ public:
 	bool called = false;
 	void HandleEvent(std::shared_ptr<IEvent>) override { called = true; }
 };
+
 TEST(ArchitectureTest, RegisterEventAndSendEvent)
 {
 	auto arch = std::make_shared<TestArchitecture>();
@@ -574,7 +784,6 @@ TEST(ArchitectureTest, RegisterEventAndSendEvent)
 	EXPECT_FALSE(handler.called);
 }
 
-// 命令分发
 class MyCommand : public IJCommand
 {
 public:
@@ -583,6 +792,7 @@ public:
 	void SetArchitecture(std::shared_ptr<IArchitecture>) override {}
 	std::weak_ptr<IArchitecture> GetArchitecture() const override { return {}; }
 };
+
 TEST(ArchitectureTest, SendCommand)
 {
 	auto arch = std::make_shared<TestArchitecture>();
@@ -592,7 +802,6 @@ TEST(ArchitectureTest, SendCommand)
 	EXPECT_TRUE(cmdPtr->executed);
 }
 
-// 查询分发
 template <typename T>
 class MyQuery : public IQuery<T>
 {
@@ -606,6 +815,7 @@ public:
 	void SetArchitecture(std::shared_ptr<IArchitecture>) override {}
 	std::weak_ptr<IArchitecture> GetArchitecture() const override { return {}; }
 };
+
 TEST(ArchitectureTest, SendQuery)
 {
 	auto arch = std::make_shared<TestArchitecture>();
@@ -613,7 +823,6 @@ TEST(ArchitectureTest, SendQuery)
 	EXPECT_EQ(result, 42);
 }
 
-// 生命周期管理
 TEST(ArchitectureTest, InitAndDeinit)
 {
 	auto arch = std::make_shared<TestArchitecture>();
@@ -629,7 +838,6 @@ TEST(ArchitectureTest, InitAndDeinit)
 	EXPECT_FALSE(sys->inited);
 }
 
-// 异常分支
 TEST(ArchitectureTest, RegisterNullptrThrows)
 {
 	auto arch = std::make_shared<TestArchitecture>();
@@ -645,376 +853,6 @@ TEST(ModelTest, SetAndGetArchitecture)
 	model->SetArchitecture(arch);
 	EXPECT_EQ(model->GetArchitecture().lock(), arch);
 }
-
-// ========== BindablePropertyUnRegister 测试 ==========
-
-TEST(BindablePropertyUnRegisterTest, GetIdReturnsCorrectId)
-{
-	BindableProperty<int> prop(0);
-	auto unreg = prop.Register([](const int&) {});
-	int id = unreg->GetId();
-	EXPECT_GE(id, 0);
-}
-
-TEST(BindablePropertyUnRegisterTest, UnRegisterRemovesObserver)
-{
-	BindableProperty<int> prop(0);
-	int value = 0;
-	auto unreg = prop.Register([&](const int& v) { value = v; });
-	prop.SetValue(1);
-	EXPECT_EQ(value, 1);
-	unreg->UnRegister();
-	prop.SetValue(2);
-	EXPECT_EQ(value, 1); // 不再更新
-}
-
-TEST(BindablePropertyUnRegisterTest, UnRegisterIsIdempotent)
-{
-	BindableProperty<int> prop(0);
-	int value = 0;
-	auto unreg = prop.Register([&](const int& v) { value = v; });
-	prop.SetValue(1);
-	unreg->UnRegister();
-	// 再次调用 UnRegister 不应崩溃
-	EXPECT_NO_THROW(unreg->UnRegister());
-	prop.SetValue(2);
-	EXPECT_EQ(value, 1);
-}
-
-TEST(BindablePropertyUnRegisterTest, InvokeCallsCallback)
-{
-	bool called = false;
-	BindableProperty<int> prop(0);
-	auto unreg = std::make_shared<BindablePropertyUnRegister<int>>(0, &prop, [&](int) { called = true; });
-	unreg->Invoke(123);
-	EXPECT_TRUE(called);
-}
-
-TEST(BindablePropertyUnRegisterTest, InvokeWithMoveOnlyType)
-{
-	BindableProperty<int> prop(1);
-	bool called = false;
-	auto unreg = prop.Register([&](const int& v)
-		{
-			if (v)
-				called = true;
-		});
-	prop.SetValue(42);
-	EXPECT_TRUE(called);
-}
-
-TEST(BindablePropertyUnRegisterTest, UnRegisterWhenObjectDestroyedWorks)
-{
-	BindableProperty<int> prop(0);
-	int value = 0;
-	class MyTrigger : public UnRegisterTrigger {};
-	MyTrigger trigger;
-	{
-		auto unreg = prop.Register([&](const int& v) { value = v; });
-		unreg->UnRegisterWhenObjectDestroyed(&trigger);
-		prop.SetValue(5);
-		EXPECT_EQ(value, 5);
-	}
-	// trigger析构时自动注销
-	trigger.UnRegister();
-	prop.SetValue(10);
-	EXPECT_EQ(value, 5); // 不再更新
-}
-
-TEST(BindablePropertyUnRegisterTest, UnRegisterWhenObjectDestroyedIsIdempotent)
-{
-	BindableProperty<int> prop(0);
-	int value = 0;
-	class MyTrigger : public UnRegisterTrigger {};
-	MyTrigger trigger;
-	auto unreg = prop.Register([&](const int& v) { value = v; });
-	unreg->UnRegisterWhenObjectDestroyed(&trigger);
-	// 多次调用不应崩溃
-	EXPECT_NO_THROW(unreg->UnRegisterWhenObjectDestroyed(&trigger));
-	trigger.UnRegister();
-	prop.SetValue(10);
-	EXPECT_EQ(value, 0);
-}
-
-TEST(BindablePropertyUnRegisterTest, CallbackCanBeNull)
-{
-	BindableProperty<int> prop(0);
-	// 构造时 callback 为空，不应崩溃
-	auto unreg = std::make_shared<BindablePropertyUnRegister<int>>(0, &prop, nullptr);
-	EXPECT_NO_THROW(unreg->Invoke(1));
-}
-
-TEST(BindablePropertyUnRegisterTest, PropertyPointerNullAfterUnRegister)
-{
-	BindableProperty<int> prop(0);
-	auto unreg = prop.Register([](const int&) {});
-	unreg->UnRegister();
-	// 再次 UnRegister 不应崩溃，且 mProperty 已为 nullptr
-	EXPECT_NO_THROW(unreg->UnRegister());
-}
-
-TEST(BindablePropertyUnRegisterTest, UnRegisterDoesNotAffectOtherObservers)
-{
-	BindableProperty<int> prop(0);
-	int v1 = 0, v2 = 0;
-	auto u1 = prop.Register([&](const int& v) { v1 = v; });
-	auto u2 = prop.Register([&](const int& v) { v2 = v; });
-	prop.SetValue(1);
-	u1->UnRegister();
-	prop.SetValue(2);
-	EXPECT_EQ(v1, 1); // u1 不再更新
-	EXPECT_EQ(v2, 2); // u2 仍然更新
-}
-
-TEST(BindablePropertyTest, CustomTypeBind)
-{
-	BindableProperty<CustomType> prop({ 1 });
-	int observed = 0;
-	auto u = prop.Register([&](const CustomType& v) { observed = v.x; });
-	prop.SetValue({ 42 });
-	EXPECT_EQ(observed, 42);
-}
-
-TEST(BindablePropertyTest, MoveAssignAndMoveConstruct)
-{
-	BindableProperty<int> prop1(1);
-	prop1.SetValue(2);
-	BindableProperty<int> prop2(std::move(prop1));
-	EXPECT_EQ(prop2.GetValue(), 2);
-	BindableProperty<int> prop3;
-	prop3 = std::move(prop2);
-	EXPECT_EQ(prop3.GetValue(), 2);
-}
-
-// ========== 能力接口（ICanGetModel等）单元测试 ==========
-
-class DummyArch : public Architecture
-{
-protected:
-	void Init() override {}
-};
-
-class DummyEvent : public IEvent
-{
-};
-
-class DummyHandler : public ICanHandleEvent
-{
-public:
-	bool called = false;
-	void HandleEvent(std::shared_ptr<IEvent>) override { called = true; }
-};
-
-// ICommand 测试用
-class DummyCommand : public IJCommand
-{
-public:
-	bool executed = false;
-	void Execute() override { executed = true; }
-	void SetArchitecture(std::shared_ptr<IArchitecture> arch) override { mArch = arch; }
-	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
-
-private:
-	std::weak_ptr<IArchitecture> mArch;
-};
-
-// IQuery 测试用
-class DummyQuery : public IQuery<int>
-{
-public:
-	int Do() override { return 42; }
-	void SetArchitecture(std::shared_ptr<IArchitecture> arch) override { mArch = arch; }
-	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
-
-private:
-	std::weak_ptr<IArchitecture> mArch;
-};
-
-// ========== 能力接口实现类 ==========
-class CanGetModelObj : public ICanGetModel
-{
-public:
-	std::weak_ptr<IArchitecture> mArch;
-	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
-};
-
-class CanGetSystemObj : public ICanGetSystem
-{
-public:
-	std::weak_ptr<IArchitecture> mArch;
-	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
-};
-
-class CanSendCommandObj : public ICanSendCommand
-{
-public:
-	std::weak_ptr<IArchitecture> mArch;
-	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
-};
-
-class CanSendQueryObj : public ICanSendQuery
-{
-public:
-	std::weak_ptr<IArchitecture> mArch;
-	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
-};
-
-class CanGetUtilityObj : public ICanGetUtility
-{
-public:
-	std::weak_ptr<IArchitecture> mArch;
-	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
-};
-
-class CanSendEventObj : public ICanSendEvent
-{
-public:
-	std::weak_ptr<IArchitecture> mArch;
-	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
-};
-
-class CanRegisterEventObj : public ICanRegisterEvent
-{
-public:
-	std::weak_ptr<IArchitecture> mArch;
-	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
-};
-
-// ========== ICanGetModel ==========
-TEST(CapabilityTest, ICanGetModel_Success)
-{
-	auto arch = std::make_shared<DummyArch>();
-	auto model = std::make_shared<DummyModel>();
-	arch->RegisterModel<DummyModel>(model);
-
-	CanGetModelObj obj;
-	obj.mArch = arch;
-	auto got = obj.GetModel<DummyModel>();
-	EXPECT_EQ(got, model);
-}
-
-TEST(CapabilityTest, ICanGetModel_ArchNotSet)
-{
-	CanGetModelObj obj;
-	EXPECT_THROW(obj.GetModel<DummyModel>(), ArchitectureNotSetException);
-}
-
-// ========== ICanGetSystem ==========
-TEST(CapabilityTest, ICanGetSystem_Success)
-{
-	auto arch = std::make_shared<DummyArch>();
-	auto sys = std::make_shared<DummySystem>();
-	arch->RegisterSystem<DummySystem>(sys);
-
-	CanGetSystemObj obj;
-	obj.mArch = arch;
-	auto got = obj.GetSystem<DummySystem>();
-	EXPECT_EQ(got, sys);
-}
-
-TEST(CapabilityTest, ICanGetSystem_ArchNotSet)
-{
-	CanGetSystemObj obj;
-	EXPECT_THROW(obj.GetSystem<DummySystem>(), ArchitectureNotSetException);
-}
-
-// ========== ICanSendCommand ==========
-TEST(CapabilityTest, ICanSendCommand_Success)
-{
-	auto arch = std::make_shared<DummyArch>();
-	CanSendCommandObj obj;
-	obj.mArch = arch;
-	obj.SendCommand<DummyCommand>();
-	// 由于 DummyCommand::executed 是局部变量，无法直接断言，但可通过不抛异常判断流程
-	SUCCEED();
-}
-
-TEST(CapabilityTest, ICanSendCommand_ArchNotSet)
-{
-	CanSendCommandObj obj;
-	EXPECT_THROW(obj.SendCommand<DummyCommand>(), ArchitectureNotSetException);
-}
-
-// ========== ICanSendQuery ==========
-TEST(CapabilityTest, ICanSendQuery_Success)
-{
-	auto arch = std::make_shared<DummyArch>();
-	CanSendQueryObj obj;
-	obj.mArch = arch;
-	int result = obj.SendQuery<DummyQuery>();
-	EXPECT_EQ(result, 42);
-}
-
-TEST(CapabilityTest, ICanSendQuery_ArchNotSet)
-{
-	CanSendQueryObj obj;
-	EXPECT_THROW(obj.SendQuery<DummyQuery>(), ArchitectureNotSetException);
-}
-
-// ========== ICanGetUtility ==========
-TEST(CapabilityTest, ICanGetUtility_Success)
-{
-	auto arch = std::make_shared<DummyArch>();
-	auto util = std::make_shared<DummyUtility>();
-	arch->RegisterUtility<DummyUtility>(util);
-
-	CanGetUtilityObj obj;
-	obj.mArch = arch;
-	auto got = obj.GetUtility<DummyUtility>();
-	EXPECT_EQ(got, util);
-}
-
-TEST(CapabilityTest, ICanGetUtility_ArchNotSet)
-{
-	CanGetUtilityObj obj;
-	EXPECT_THROW(obj.GetUtility<DummyUtility>(), ArchitectureNotSetException);
-}
-
-// ========== ICanSendEvent ==========
-TEST(CapabilityTest, ICanSendEvent_Success)
-{
-	auto arch = std::make_shared<DummyArch>();
-	DummyHandler handler;
-	arch->RegisterEvent<DummyEvent>(&handler);
-
-	CanSendEventObj obj;
-	obj.mArch = arch;
-	obj.SendEvent<DummyEvent>();
-	EXPECT_TRUE(handler.called);
-}
-
-TEST(CapabilityTest, ICanSendEvent_ArchNotSet)
-{
-	CanSendEventObj obj;
-	EXPECT_THROW(obj.SendEvent<DummyEvent>(), ArchitectureNotSetException);
-}
-
-// ========== ICanRegisterEvent ==========
-TEST(CapabilityTest, ICanRegisterEvent_Success)
-{
-	auto arch = std::make_shared<DummyArch>();
-	DummyHandler handler;
-	CanRegisterEventObj obj;
-	obj.mArch = arch;
-	obj.RegisterEvent<DummyEvent>(&handler);
-	arch->SendEvent<DummyEvent>();
-	EXPECT_TRUE(handler.called);
-
-	handler.called = false;
-	obj.UnRegisterEvent<DummyEvent>(&handler);
-	arch->SendEvent<DummyEvent>();
-	EXPECT_FALSE(handler.called);
-}
-
-TEST(CapabilityTest, ICanRegisterEvent_ArchNotSet)
-{
-	CanRegisterEventObj obj;
-	DummyHandler handler;
-	EXPECT_THROW(obj.RegisterEvent<DummyEvent>(&handler), ArchitectureNotSetException);
-	EXPECT_THROW(obj.UnRegisterEvent<DummyEvent>(&handler), ArchitectureNotSetException);
-}
-
-// ========== Architecture 单元测试 ==========
 
 class ArchTestModel : public IModel
 {
@@ -1212,7 +1050,465 @@ TEST(ArchitectureTest, RegisterSameTypeDifferentInstance)
 	EXPECT_THROW(arch->RegisterModel<ArchTestModel>(model2), ComponentAlreadyRegisteredException);
 }
 
-// ========== AbstractCommand 单元测试 ==========
+class LazyRegModel : public AbstractModel
+{
+public:
+	bool inited = false;
+protected:
+	void OnInit() override { inited = true; }
+	void OnDeinit() override {}
+};
+
+class LazyRegSystem : public AbstractSystem
+{
+public:
+	bool inited = false;
+protected:
+	void OnInit() override { inited = true; }
+	void OnDeinit() override {}
+	void OnEvent(std::shared_ptr<IEvent>) override {}
+};
+
+class LazyRegArch : public Architecture
+{
+protected:
+	void Init() override {}
+};
+
+TEST(ArchitectureTest, LazyRegistrationAfterInit)
+{
+	auto arch = std::make_shared<LazyRegArch>();
+	arch->InitArchitecture();
+	auto model = std::make_shared<LazyRegModel>();
+	arch->RegisterModel<LazyRegModel>(model);
+	EXPECT_TRUE(model->inited);
+}
+
+TEST(ArchitectureTest, LazySystemRegistrationAfterInit)
+{
+	auto arch = std::make_shared<LazyRegArch>();
+	arch->InitArchitecture();
+	auto sys = std::make_shared<LazyRegSystem>();
+	arch->RegisterSystem<LazyRegSystem>(sys);
+	EXPECT_TRUE(sys->inited);
+}
+
+TEST(ArchitectureTest, GetSharedFromThisReturnsSelf)
+{
+	auto arch = std::make_shared<LazyRegArch>();
+	auto self = arch->GetSharedFromThis();
+	EXPECT_EQ(self.get(), arch.get());
+}
+
+TEST(ArchitectureTest, DeinitDoesNotClearComponents)
+{
+	auto arch = std::make_shared<LazyRegArch>();
+	auto model = std::make_shared<LazyRegModel>();
+	arch->RegisterModel<LazyRegModel>(model);
+	arch->InitArchitecture();
+	arch->Deinit();
+	auto got = arch->GetModel<LazyRegModel>();
+	EXPECT_EQ(got, model);
+}
+
+TEST(ArchitectureTest, RegisterUtilityAfterInitDoesNotCrash)
+{
+	auto arch = std::make_shared<LazyRegArch>();
+	arch->InitArchitecture();
+	auto util = std::make_shared<DummyUtility>();
+	EXPECT_NO_THROW(arch->RegisterUtility<DummyUtility>(util));
+	EXPECT_EQ(arch->GetUtility<DummyUtility>(), util);
+}
+
+static int g_deinitCounter = 0;
+
+class OrderTestModel : public AbstractModel
+{
+public:
+	int deinitOrder = 0;
+protected:
+	void OnInit() override {}
+	void OnDeinit() override { deinitOrder = ++g_deinitCounter; }
+};
+
+class OrderTestSystem : public AbstractSystem
+{
+public:
+	int deinitOrder = 0;
+protected:
+	void OnInit() override {}
+	void OnDeinit() override { deinitOrder = ++g_deinitCounter; }
+	void OnEvent(std::shared_ptr<IEvent>) override {}
+};
+
+class OrderTestArch : public Architecture
+{
+protected:
+	void Init() override {}
+};
+
+TEST(ArchitectureTest, DeinitOrderSystemBeforeModel)
+{
+	g_deinitCounter = 0;
+	auto arch = std::make_shared<OrderTestArch>();
+	auto model = std::make_shared<OrderTestModel>();
+	auto sys = std::make_shared<OrderTestSystem>();
+	arch->RegisterModel<OrderTestModel>(model);
+	arch->RegisterSystem<OrderTestSystem>(sys);
+	arch->InitArchitecture();
+	arch->Deinit();
+	EXPECT_LT(sys->deinitOrder, model->deinitOrder);
+}
+
+// ============================== BindablePropertyUnRegister Tests ==============================
+
+TEST(BindablePropertyUnRegisterTest, GetIdReturnsCorrectId)
+{
+	BindableProperty<int> prop(0);
+	auto unreg = prop.Register([](const int&) {});
+	int id = unreg->GetId();
+	EXPECT_GE(id, 0);
+}
+
+TEST(BindablePropertyUnRegisterTest, UnRegisterRemovesObserver)
+{
+	BindableProperty<int> prop(0);
+	int value = 0;
+	auto unreg = prop.Register([&](const int& v) { value = v; });
+	prop.SetValue(1);
+	EXPECT_EQ(value, 1);
+	unreg->UnRegister();
+	prop.SetValue(2);
+	EXPECT_EQ(value, 1);
+}
+
+TEST(BindablePropertyUnRegisterTest, UnRegisterIsIdempotent)
+{
+	BindableProperty<int> prop(0);
+	int value = 0;
+	auto unreg = prop.Register([&](const int& v) { value = v; });
+	prop.SetValue(1);
+	unreg->UnRegister();
+	EXPECT_NO_THROW(unreg->UnRegister());
+	prop.SetValue(2);
+	EXPECT_EQ(value, 1);
+}
+
+TEST(BindablePropertyUnRegisterTest, InvokeCallsCallback)
+{
+	bool called = false;
+	BindableProperty<int> prop(0);
+	auto unreg = std::make_shared<BindablePropertyUnRegister<int>>(0, &prop, [&](int) { called = true; });
+	unreg->Invoke(123);
+	EXPECT_TRUE(called);
+}
+
+TEST(BindablePropertyUnRegisterTest, InvokeWithMoveOnlyType)
+{
+	BindableProperty<int> prop(1);
+	bool called = false;
+	auto unreg = prop.Register([&](const int& v)
+	{
+		if (v)
+			called = true;
+	});
+	prop.SetValue(42);
+	EXPECT_TRUE(called);
+}
+
+TEST(BindablePropertyUnRegisterTest, UnRegisterWhenObjectDestroyedWorks)
+{
+	BindableProperty<int> prop(0);
+	int value = 0;
+	class MyTrigger : public UnRegisterTrigger {};
+	MyTrigger trigger;
+	{
+		auto unreg = prop.Register([&](const int& v) { value = v; });
+		unreg->UnRegisterWhenObjectDestroyed(&trigger);
+		prop.SetValue(5);
+		EXPECT_EQ(value, 5);
+	}
+	trigger.UnRegister();
+	prop.SetValue(10);
+	EXPECT_EQ(value, 5);
+}
+
+TEST(BindablePropertyUnRegisterTest, UnRegisterWhenObjectDestroyedIsIdempotent)
+{
+	BindableProperty<int> prop(0);
+	int value = 0;
+	class MyTrigger : public UnRegisterTrigger {};
+	MyTrigger trigger;
+	auto unreg = prop.Register([&](const int& v) { value = v; });
+	unreg->UnRegisterWhenObjectDestroyed(&trigger);
+	EXPECT_NO_THROW(unreg->UnRegisterWhenObjectDestroyed(&trigger));
+	trigger.UnRegister();
+	prop.SetValue(10);
+	EXPECT_EQ(value, 0);
+}
+
+TEST(BindablePropertyUnRegisterTest, CallbackCanBeNull)
+{
+	BindableProperty<int> prop(0);
+	auto unreg = std::make_shared<BindablePropertyUnRegister<int>>(0, &prop, nullptr);
+	EXPECT_NO_THROW(unreg->Invoke(1));
+}
+
+TEST(BindablePropertyUnRegisterTest, PropertyPointerNullAfterUnRegister)
+{
+	BindableProperty<int> prop(0);
+	auto unreg = prop.Register([](const int&) {});
+	unreg->UnRegister();
+	EXPECT_NO_THROW(unreg->UnRegister());
+}
+
+TEST(BindablePropertyUnRegisterTest, UnRegisterDoesNotAffectOtherObservers)
+{
+	BindableProperty<int> prop(0);
+	int v1 = 0, v2 = 0;
+	auto u1 = prop.Register([&](const int& v) { v1 = v; });
+	auto u2 = prop.Register([&](const int& v) { v2 = v; });
+	prop.SetValue(1);
+	u1->UnRegister();
+	prop.SetValue(2);
+	EXPECT_EQ(v1, 1);
+	EXPECT_EQ(v2, 2);
+}
+
+TEST(BindablePropertyUnRegisterTest, SetPropertyAfterMove)
+{
+	BindableProperty<int> prop1(0);
+	int observed = 0;
+	auto unreg = prop1.Register([&](const int& v) { observed = v; });
+	BindableProperty<int> prop2(std::move(prop1));
+	prop2.SetValue(55);
+	EXPECT_EQ(observed, 55);
+	unreg->UnRegister();
+	int observed2 = 0;
+	auto u2 = prop2.Register([&](const int& v) { observed2 = v; });
+	prop2.SetValue(66);
+	EXPECT_EQ(observed2, 66);
+}
+
+// ============================== Capability Interface Tests ==============================
+
+class DummyArch : public Architecture
+{
+protected:
+	void Init() override {}
+};
+
+class DummyEvent : public IEvent
+{
+};
+
+class DummyHandler : public ICanHandleEvent
+{
+public:
+	bool called = false;
+	void HandleEvent(std::shared_ptr<IEvent>) override { called = true; }
+};
+
+class DummyCommand : public IJCommand
+{
+public:
+	bool executed = false;
+	void Execute() override { executed = true; }
+	void SetArchitecture(std::shared_ptr<IArchitecture> arch) override { mArch = arch; }
+	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
+
+private:
+	std::weak_ptr<IArchitecture> mArch;
+};
+
+class DummyQuery : public IQuery<int>
+{
+public:
+	int Do() override { return 42; }
+	void SetArchitecture(std::shared_ptr<IArchitecture> arch) override { mArch = arch; }
+	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
+
+private:
+	std::weak_ptr<IArchitecture> mArch;
+};
+
+class CanGetModelObj : public ICanGetModel
+{
+public:
+	std::weak_ptr<IArchitecture> mArch;
+	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
+};
+
+class CanGetSystemObj : public ICanGetSystem
+{
+public:
+	std::weak_ptr<IArchitecture> mArch;
+	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
+};
+
+class CanSendCommandObj : public ICanSendCommand
+{
+public:
+	std::weak_ptr<IArchitecture> mArch;
+	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
+};
+
+class CanSendQueryObj : public ICanSendQuery
+{
+public:
+	std::weak_ptr<IArchitecture> mArch;
+	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
+};
+
+class CanGetUtilityObj : public ICanGetUtility
+{
+public:
+	std::weak_ptr<IArchitecture> mArch;
+	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
+};
+
+class CanSendEventObj : public ICanSendEvent
+{
+public:
+	std::weak_ptr<IArchitecture> mArch;
+	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
+};
+
+class CanRegisterEventObj : public ICanRegisterEvent
+{
+public:
+	std::weak_ptr<IArchitecture> mArch;
+	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
+};
+
+TEST(CapabilityTest, ICanGetModel_Success)
+{
+	auto arch = std::make_shared<DummyArch>();
+	auto model = std::make_shared<DummyModel>();
+	arch->RegisterModel<DummyModel>(model);
+
+	CanGetModelObj obj;
+	obj.mArch = arch;
+	auto got = obj.GetModel<DummyModel>();
+	EXPECT_EQ(got, model);
+}
+
+TEST(CapabilityTest, ICanGetModel_ArchNotSet)
+{
+	CanGetModelObj obj;
+	EXPECT_THROW(obj.GetModel<DummyModel>(), ArchitectureNotSetException);
+}
+
+TEST(CapabilityTest, ICanGetSystem_Success)
+{
+	auto arch = std::make_shared<DummyArch>();
+	auto sys = std::make_shared<DummySystem>();
+	arch->RegisterSystem<DummySystem>(sys);
+
+	CanGetSystemObj obj;
+	obj.mArch = arch;
+	auto got = obj.GetSystem<DummySystem>();
+	EXPECT_EQ(got, sys);
+}
+
+TEST(CapabilityTest, ICanGetSystem_ArchNotSet)
+{
+	CanGetSystemObj obj;
+	EXPECT_THROW(obj.GetSystem<DummySystem>(), ArchitectureNotSetException);
+}
+
+TEST(CapabilityTest, ICanSendCommand_Success)
+{
+	auto arch = std::make_shared<DummyArch>();
+	CanSendCommandObj obj;
+	obj.mArch = arch;
+	obj.SendCommand<DummyCommand>();
+	SUCCEED();
+}
+
+TEST(CapabilityTest, ICanSendCommand_ArchNotSet)
+{
+	CanSendCommandObj obj;
+	EXPECT_THROW(obj.SendCommand<DummyCommand>(), ArchitectureNotSetException);
+}
+
+TEST(CapabilityTest, ICanSendQuery_Success)
+{
+	auto arch = std::make_shared<DummyArch>();
+	CanSendQueryObj obj;
+	obj.mArch = arch;
+	int result = obj.SendQuery<DummyQuery>();
+	EXPECT_EQ(result, 42);
+}
+
+TEST(CapabilityTest, ICanSendQuery_ArchNotSet)
+{
+	CanSendQueryObj obj;
+	EXPECT_THROW(obj.SendQuery<DummyQuery>(), ArchitectureNotSetException);
+}
+
+TEST(CapabilityTest, ICanGetUtility_Success)
+{
+	auto arch = std::make_shared<DummyArch>();
+	auto util = std::make_shared<DummyUtility>();
+	arch->RegisterUtility<DummyUtility>(util);
+
+	CanGetUtilityObj obj;
+	obj.mArch = arch;
+	auto got = obj.GetUtility<DummyUtility>();
+	EXPECT_EQ(got, util);
+}
+
+TEST(CapabilityTest, ICanGetUtility_ArchNotSet)
+{
+	CanGetUtilityObj obj;
+	EXPECT_THROW(obj.GetUtility<DummyUtility>(), ArchitectureNotSetException);
+}
+
+TEST(CapabilityTest, ICanSendEvent_Success)
+{
+	auto arch = std::make_shared<DummyArch>();
+	DummyHandler handler;
+	arch->RegisterEvent<DummyEvent>(&handler);
+
+	CanSendEventObj obj;
+	obj.mArch = arch;
+	obj.SendEvent<DummyEvent>();
+	EXPECT_TRUE(handler.called);
+}
+
+TEST(CapabilityTest, ICanSendEvent_ArchNotSet)
+{
+	CanSendEventObj obj;
+	EXPECT_THROW(obj.SendEvent<DummyEvent>(), ArchitectureNotSetException);
+}
+
+TEST(CapabilityTest, ICanRegisterEvent_Success)
+{
+	auto arch = std::make_shared<DummyArch>();
+	DummyHandler handler;
+	CanRegisterEventObj obj;
+	obj.mArch = arch;
+	obj.RegisterEvent<DummyEvent>(&handler);
+	arch->SendEvent<DummyEvent>();
+	EXPECT_TRUE(handler.called);
+
+	handler.called = false;
+	obj.UnRegisterEvent<DummyEvent>(&handler);
+	arch->SendEvent<DummyEvent>();
+	EXPECT_FALSE(handler.called);
+}
+
+TEST(CapabilityTest, ICanRegisterEvent_ArchNotSet)
+{
+	CanRegisterEventObj obj;
+	DummyHandler handler;
+	EXPECT_THROW(obj.RegisterEvent<DummyEvent>(&handler), ArchitectureNotSetException);
+	EXPECT_THROW(obj.UnRegisterEvent<DummyEvent>(&handler), ArchitectureNotSetException);
+}
+
+// ============================== AbstractCommand Tests ==============================
+
 class TestArch : public Architecture
 {
 protected:
@@ -1245,7 +1541,20 @@ TEST(AbstractCommandTest, SetAndGetArchitecture)
 	EXPECT_EQ(cmd.GetArchitecture().lock(), arch);
 }
 
-// ========== AbstractModel 单元测试 ==========
+class NoOnExecuteCommand : public AbstractCommand
+{
+protected:
+	void OnExecute() override { throw std::runtime_error("Not implemented"); }
+};
+
+TEST(AbstractCommandTest, OnExecuteThrows)
+{
+	NoOnExecuteCommand cmd;
+	EXPECT_THROW(cmd.Execute(), std::runtime_error);
+}
+
+// ============================== AbstractModel Tests ==============================
+
 class MyAbstractModel : public AbstractModel
 {
 public:
@@ -1274,11 +1583,24 @@ TEST(AbstractModelTest, SetAndGetArchitecture)
 	auto arch = std::make_shared<TestArch>();
 	auto model = std::make_shared<MyAbstractModel>();
 	arch->RegisterModel<MyAbstractModel>(model);
-	// RegisterModel 会自动调用 SetArchitecture
 	EXPECT_EQ(model->GetArchitecture().lock(), arch);
 }
 
-// ========== AbstractSystem 单元测试 ==========
+class NoOnInitModel : public AbstractModel
+{
+protected:
+	void OnInit() override { throw std::runtime_error("Not implemented"); }
+	void OnDeinit() override {}
+};
+
+TEST(AbstractModelTest, OnInitThrows)
+{
+	NoOnInitModel model;
+	EXPECT_THROW(model.Init(), std::runtime_error);
+}
+
+// ============================== AbstractSystem Tests ==============================
+
 class DummyEventForSystem : public IEvent
 {
 };
@@ -1322,11 +1644,26 @@ TEST(AbstractSystemTest, SetAndGetArchitecture)
 	auto arch = std::make_shared<TestArch>();
 	auto model = std::make_shared<MyAbstractSystem>();
 	arch->RegisterSystem<MyAbstractSystem>(model);
-	// RegisterSystem 会自动调用 SetArchitecture
 	EXPECT_EQ(model->GetArchitecture().lock(), arch);
 }
 
-// ========== AbstractController 单元测试 ==========
+class NoOnEventSystem : public AbstractSystem
+{
+protected:
+	void OnInit() override {}
+	void OnDeinit() override {}
+	void OnEvent(std::shared_ptr<IEvent>) override { throw std::runtime_error("Not implemented"); }
+};
+
+TEST(AbstractSystemTest, OnEventThrows)
+{
+	NoOnEventSystem sys;
+	auto evt = std::make_shared<DummyEventForSystem>();
+	EXPECT_THROW(sys.HandleEvent(evt), std::runtime_error);
+}
+
+// ============================== AbstractController Tests ==============================
+
 class DummyEventForController : public IEvent
 {
 };
@@ -1356,14 +1693,36 @@ TEST(AbstractControllerTest, HandleEventCallsOnEvent)
 	auto evt = std::make_shared<DummyEventForController>();
 	EXPECT_FALSE(ctrl.eventHandled);
 
-	// 通过接口指针调用 HandleEvent
 	ICanHandleEvent* handler = &ctrl;
 	handler->HandleEvent(evt);
 
 	EXPECT_TRUE(ctrl.eventHandled);
 }
 
-// ========== AbstractQuery 单元测试 ==========
+class ThrowingController : public AbstractController
+{
+public:
+	std::shared_ptr<IArchitecture> mArch;
+	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
+
+protected:
+	void OnEvent(std::shared_ptr<IEvent>) override
+	{
+		throw std::runtime_error("Controller event error");
+	}
+};
+
+TEST(AbstractControllerTest, OnEventThrows)
+{
+	auto arch = std::make_shared<LazyRegArch>();
+	ThrowingController ctrl;
+	ctrl.mArch = arch;
+	auto evt = std::make_shared<DummyEventForController>();
+	EXPECT_THROW(ctrl.HandleEvent(evt), std::runtime_error);
+}
+
+// ============================== AbstractQuery Tests ==============================
+
 class MyAbstractQuery : public AbstractQuery<int>
 {
 public:
@@ -1394,44 +1753,4 @@ TEST(AbstractQueryTest, SetAndGetArchitecture)
 	MyAbstractQuery query;
 	query.SetArchitecture(arch);
 	EXPECT_EQ(query.GetArchitecture().lock(), arch);
-}
-
-class NoOnExecuteCommand : public AbstractCommand
-{
-protected:
-	void OnExecute() override { throw std::runtime_error("Not implemented"); }
-};
-
-TEST(AbstractCommandTest, OnExecuteThrows)
-{
-	NoOnExecuteCommand cmd;
-	EXPECT_THROW(cmd.Execute(), std::runtime_error);
-}
-
-class NoOnInitModel : public AbstractModel
-{
-protected:
-	void OnInit() override { throw std::runtime_error("Not implemented"); }
-	void OnDeinit() override {}
-};
-
-TEST(AbstractModelTest, OnInitThrows)
-{
-	NoOnInitModel model;
-	EXPECT_THROW(model.Init(), std::runtime_error);
-}
-
-class NoOnEventSystem : public AbstractSystem
-{
-protected:
-	void OnInit() override {}
-	void OnDeinit() override {}
-	void OnEvent(std::shared_ptr<IEvent>) override { throw std::runtime_error("Not implemented"); }
-};
-
-TEST(AbstractSystemTest, OnEventThrows)
-{
-	NoOnEventSystem sys;
-	auto evt = std::make_shared<DummyEventForSystem>();
-	EXPECT_THROW(sys.HandleEvent(evt), std::runtime_error);
 }

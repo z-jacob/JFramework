@@ -15,13 +15,13 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="JFramework.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\gtest\gtest-all.cc">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="$(MSBuildThisFileDirectory)src\gmock\gmock-all.cc">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
