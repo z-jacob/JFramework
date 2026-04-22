@@ -613,7 +613,14 @@ namespace JFramework
 			std::lock_guard<std::recursive_mutex> lock(mMutex);
 			for (auto& unRegister : mUnRegisters)
 			{
-				unRegister->UnRegister();
+				try
+				{
+					unRegister->UnRegister();
+				}
+				catch (const std::exception& e)
+				{
+					std::cerr << "[UnRegisterTrigger] Exception during unregister: " << e.what() << std::endl;
+				}
 			}
 			mUnRegisters.clear();
 		}
@@ -643,7 +650,7 @@ namespace JFramework
 		 */
 		BindablePropertyUnRegister(int id,
 			BindableProperty<T>* property,
-			std::function<void(T)> callback)
+			std::function<void(const T&)> callback)
 			: mProperty(property)
 			, mCallback(std::move(callback))
 			, mId(id)
@@ -690,11 +697,11 @@ namespace JFramework
 		 * @brief Invoke callback function
 		 * @param value New value
 		 */
-		void Invoke(T value)
+		void Invoke(const T& value)
 		{
 			if (mCallback)
 			{
-				mCallback(std::move(value));
+				mCallback(value);
 			}
 		}
 
@@ -703,7 +710,7 @@ namespace JFramework
 
 	private:
 		BindableProperty<T>* mProperty;    ///< Associated bindable property
-		std::function<void(T)> mCallback;  ///< Value change callback function
+		std::function<void(const T&)> mCallback;  ///< Value change callback function
 	};
 
 	/**
@@ -797,7 +804,11 @@ namespace JFramework
 		 * @brief Get current value
 		 * @return Current value
 		 */
-		const T& GetValue() const { return mValue; }
+		T GetValue() const
+		{
+			std::lock_guard<std::recursive_mutex> lock(mMutex);
+			return mValue;
+		}
 
 		/**
 		 * @brief Set new value and notify observers
@@ -840,8 +851,12 @@ namespace JFramework
 		std::shared_ptr<BindablePropertyUnRegister<T>> RegisterWithInitValue(
 			std::function<void(const T&)> onValueChanged)
 		{
+			std::lock_guard<std::recursive_mutex> lock(mMutex);
 			onValueChanged(mValue);
-			return Register(std::move(onValueChanged));
+			auto unRegister = std::make_shared<BindablePropertyUnRegister<T>>(
+				mNextId++, this, std::move(onValueChanged));
+			mObservers[unRegister->GetId()] = unRegister;
+			return unRegister;
 		}
 
 		/**
@@ -870,7 +885,11 @@ namespace JFramework
 		}
 
 		/// Type conversion operator
-		operator T() const { return mValue; }
+		operator T() const
+		{
+			std::lock_guard<std::recursive_mutex> lock(mMutex);
+			return mValue;
+		}
 
 		/**
 		 * @brief Copy assignment operator
@@ -895,7 +914,7 @@ namespace JFramework
 		}
 
 	private:
-		std::recursive_mutex mMutex;       ///< Thread safety mutex
+		mutable std::recursive_mutex mMutex;       ///< Thread safety mutex
 		int mNextId = 0;         ///< Next observer ID
 		T mValue;              ///< Property value
 		std::unordered_map<int, std::shared_ptr<BindablePropertyUnRegister<T>>> mObservers; ///< Observer list
@@ -1300,7 +1319,8 @@ namespace JFramework
 	 *
 	 * Base interface for controllers, used to coordinate interactions between systems, models, and views
 	 */
-	class IController : public ICanGetSystem,
+	class IController : public ICanSetArchitecture,
+		public ICanGetSystem,
 		public ICanGetModel,
 		public ICanSendCommand,
 		public ICanSendEvent,
@@ -1619,6 +1639,7 @@ namespace JFramework
 		 */
 		void Deinit() final
 		{
+			std::lock_guard<std::recursive_mutex> lock(mArchMutex);
 			if (!mInitialized)
 				return;
 
@@ -1644,6 +1665,7 @@ namespace JFramework
 		 */
 		virtual void InitArchitecture()
 		{
+			std::lock_guard<std::recursive_mutex> lock(mArchMutex);
 			if (mInitialized)
 				return;
 
@@ -1727,6 +1749,7 @@ namespace JFramework
 				component->SetInitialized(false);
 			}
 		}
+			std::recursive_mutex mArchMutex;
 	};
 
 	// ============================== Abstract Base Classes ==============================
@@ -1896,18 +1919,23 @@ namespace JFramework
 	 */
 	class AbstractController : public IController
 	{
+	private:
+		std::weak_ptr<IArchitecture> mArchitecture;
+
 	public:
-		/**
-		 * @brief Handle event
-		 * @param event Event instance
-		 */
+		std::weak_ptr<IArchitecture> GetArchitecture() const final
+		{
+			return mArchitecture;
+		}
+
+		void SetArchitecture(std::shared_ptr<IArchitecture> architecture) final
+		{
+			mArchitecture = architecture;
+		}
+
 		void HandleEvent(std::shared_ptr<IEvent> event) final { OnEvent(event); }
 
 	protected:
-		/**
-		 * @brief Event handling implementation
-		 * @param event Event instance
-		 */
 		virtual void OnEvent(std::shared_ptr<IEvent> event) = 0;
 	};
 
@@ -1958,4 +1986,4 @@ namespace JFramework
 	};
 }; // namespace JFramework
 
-#endif // !_JFRAMEWORK_
+#endif // JFRAMEWORK

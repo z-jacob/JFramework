@@ -1198,7 +1198,7 @@ TEST(BindablePropertyUnRegisterTest, InvokeCallsCallback)
 {
 	bool called = false;
 	BindableProperty<int> prop(0);
-	auto unreg = std::make_shared<BindablePropertyUnRegister<int>>(0, &prop, [&](int) { called = true; });
+	auto unreg = std::make_shared<BindablePropertyUnRegister<int>>(0, &prop, [&](const int&) { called = true; });
 	unreg->Invoke(123);
 	EXPECT_TRUE(called);
 }
@@ -1672,18 +1672,13 @@ class MyAbstractController : public AbstractController
 {
 public:
 	MyAbstractController(std::shared_ptr<IArchitecture> arch)
-		: mArch(arch)
 	{
+		SetArchitecture(arch);
 	}
 	bool eventHandled = false;
 
-	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
-
 protected:
 	void OnEvent(std::shared_ptr<IEvent> event) override { eventHandled = true; }
-
-private:
-	std::weak_ptr<IArchitecture> mArch;
 };
 
 TEST(AbstractControllerTest, HandleEventCallsOnEvent)
@@ -1702,8 +1697,7 @@ TEST(AbstractControllerTest, HandleEventCallsOnEvent)
 class ThrowingController : public AbstractController
 {
 public:
-	std::shared_ptr<IArchitecture> mArch;
-	std::weak_ptr<IArchitecture> GetArchitecture() const override { return mArch; }
+	void SetArch(std::shared_ptr<IArchitecture> arch) { SetArchitecture(arch); }
 
 protected:
 	void OnEvent(std::shared_ptr<IEvent>) override
@@ -1716,7 +1710,7 @@ TEST(AbstractControllerTest, OnEventThrows)
 {
 	auto arch = std::make_shared<LazyRegArch>();
 	ThrowingController ctrl;
-	ctrl.mArch = arch;
+	ctrl.SetArch(arch);
 	auto evt = std::make_shared<DummyEventForController>();
 	EXPECT_THROW(ctrl.HandleEvent(evt), std::runtime_error);
 }
