@@ -117,7 +117,7 @@ namespace JFramework
 		 * @param typeName Name of the command type that failed to execute
 		 */
 		explicit CommandExecuteException(const std::string& typeName)
-			: FrameworkException("Command execute Error: " + typeName)
+			: FrameworkException("Command execute error: " + typeName)
 		{
 		}
 	};
@@ -796,7 +796,6 @@ namespace JFramework
 		 */
 		~BindableProperty()
 		{
-			std::lock_guard<std::recursive_mutex> lock(mMutex);
 			mObservers.clear();
 		}
 
@@ -816,15 +815,25 @@ namespace JFramework
 		 */
 		void SetValue(const T& newValue)
 		{
-			std::lock_guard<std::recursive_mutex> lock(mMutex);
-			if (mValue == newValue)
-				return;
-			mValue = newValue;
-			for (auto& pair : mObservers)
+			std::vector<std::shared_ptr<BindablePropertyUnRegister<T>>> observers;
+			T valueToSend;
+			{
+				std::lock_guard<std::recursive_mutex> lock(mMutex);
+				if (mValue == newValue)
+					return;
+				mValue = newValue;
+				valueToSend = mValue;
+				for (auto& pair : mObservers)
+				{
+					observers.push_back(pair.second);
+				}
+			}
+
+			for (auto& observer : observers)
 			{
 				try
 				{
-					pair.second->Invoke(mValue);
+					observer->Invoke(valueToSend);
 				}
 				catch (const std::exception& e)
 				{
@@ -851,11 +860,16 @@ namespace JFramework
 		std::shared_ptr<BindablePropertyUnRegister<T>> RegisterWithInitValue(
 			std::function<void(const T&)> onValueChanged)
 		{
-			std::lock_guard<std::recursive_mutex> lock(mMutex);
-			onValueChanged(mValue);
-			auto unRegister = std::make_shared<BindablePropertyUnRegister<T>>(
-				mNextId++, this, std::move(onValueChanged));
-			mObservers[unRegister->GetId()] = unRegister;
+			T currentValue;
+			std::shared_ptr<BindablePropertyUnRegister<T>> unRegister;
+			{
+				std::lock_guard<std::recursive_mutex> lock(mMutex);
+				currentValue = mValue;
+				unRegister = std::make_shared<BindablePropertyUnRegister<T>>(
+					mNextId++, this, std::move(onValueChanged));
+				mObservers[unRegister->GetId()] = unRegister;
+			}
+			unRegister->Invoke(currentValue);
 			return unRegister;
 		}
 
@@ -1749,7 +1763,8 @@ namespace JFramework
 				component->SetInitialized(false);
 			}
 		}
-			std::recursive_mutex mArchMutex;
+
+		std::recursive_mutex mArchMutex;
 	};
 
 	// ============================== Abstract Base Classes ==============================

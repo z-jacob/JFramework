@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xxl D:/z-jacob/JFramework/JFramework.h)",
+      "Bash(xxd)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" --version)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Professional/MSBuild/Current/Bin/MSBuild.exe\" --version)",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/MSBuild.exe\" --version)",
+      "Bash(\"/c/Program Files \\(x86\\)/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/MSBuild.exe\" JFramework.sln /p:Configuration=Debug /p:Platform=x64 /t:Build /v:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" JFramework.sln /p:Configuration=Debug /p:Platform=x64 /t:Build /v:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"JFramework.sln\" -p:Configuration=Debug -p:Platform=x64 -t:Build -v:minimal)",
+      "Bash(nuget restore *)",
+      "Bash(dotnet restore *)",
+      "Bash(D:/z-jacob/JFramework/x64/Debug/UnitTest.exe *)",
+      "Bash(git *)",
+      "Bash(\"C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" JFramework.sln /p:Configuration=Debug /p:Platform=x64 /t:Build /v:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" JFramework.sln -p:Configuration=Debug -p:Platform=x64 -t:Build -v:minimal)",
+      "Bash(D:/z-jacob/JFramework/x64/Debug/JFramework.exe *)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" JFramework.sln -t:Rebuild -p:Configuration=Debug -p:Platform=x64 -v:minimal)"
+    ]
+  }
+}

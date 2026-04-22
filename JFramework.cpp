@@ -1,5 +1,4 @@
-﻿// JFramework.cpp : 此文件包含 "main" 函数。程序执行将在此处开始并结束。
-//
+// JFramework.cpp : Example application demonstrating JFramework usage.
 
 #include "JFramework.h"
 #include <iostream>
@@ -7,35 +6,35 @@ using namespace JFramework;
 
 void BindablePropertyExample()
 {
-	// 1. 声明一个可绑定属性
+	// 1. Declare a bindable property
 	BindableProperty<int> counter(0);
 
-	// 2. 注册观察者，监听属性变化
+	// 2. Register an observer to listen for value changes
 	auto unreg = counter.Register([](const int& value)
 		{
 			std::cout << "Counter changed to: " << value << std::endl;
 		});
 
-	// 3. 修改属性值，触发通知
-	counter.SetValue(1); // 输出: Counter changed to: 1
-	counter = 2;         // 输出: Counter changed to: 2
+	// 3. Modify the value to trigger notifications
+	counter.SetValue(1); // Output: Counter changed to: 1
+	counter = 2;         // Output: Counter changed to: 2
 
-	// 4. 注销观察者（不再收到通知）
+	// 4. Unregister the observer (no more notifications)
 	unreg->UnRegister();
-	counter.SetValue(3); // 无输出
+	counter.SetValue(3); // No output
 
-	// 5. 支持带初始值通知的注册
+	// 5. Register with initial value notification
 	auto unreg2 = counter.RegisterWithInitValue([](const int& value)
 		{
 			std::cout << "Init observer, value: " << value << std::endl;
 		});
-	// 输出: Init observer, value: 3
+	// Output: Init observer, value: 3
 
-	// 6. 赋值后再次触发
-	counter = 10; // 输出: Init observer, value: 10
+	// 6. Assignment triggers notification again
+	counter = 10; // Output: Init observer, value: 10
 
 	BindableProperty<int> autoCounter(100);
-	// 7. 观察者自动注销（可选，结合UnRegisterTrigger使用）
+	// 7. Auto-unregister observer (optional, using UnRegisterTrigger)
 	{
 		UnRegisterTrigger trigger;
 
@@ -43,17 +42,17 @@ void BindablePropertyExample()
 			{
 				std::cout << "Auto observer: " << value << std::endl;
 			});
-		// 绑定到 trigger，trigger 析构时自动注销
+		// Bind to trigger; auto-unregisters when trigger destructs
 		autoUnreg->UnRegisterWhenObjectDestroyed(&trigger);
 
-		autoCounter = 101; // 输出: Auto observer: 101
+		autoCounter = 101; // Output: Auto observer: 101
 
-		// trigger 离开作用域时，autoUnreg 自动注销
+		// trigger leaves scope, autoUnreg is automatically unregistered
 	}
-	// 这里 autoCounter 再次赋值不会有输出
+	// Assigning autoCounter again produces no output
 }
 
-// 1. 定义一个事件
+// 1. Define an event
 class MyEvent : public IEvent
 {
 public:
@@ -61,7 +60,7 @@ public:
 	MyEvent(const std::string& m) : msg(m) {}
 };
 
-// 2. 定义一个 Model
+// 2. Define a Model
 class CounterModel : public AbstractModel
 {
 public:
@@ -71,7 +70,7 @@ protected:
 	void OnDeinit() override {}
 };
 
-// 1. 定义一个 Utility
+// 1. Define a Utility
 class LoggerUtility : public IUtility
 {
 public:
@@ -81,19 +80,19 @@ public:
 	}
 };
 
-// 2. 定义一个 Model，使用 Utility
+// 2. Define a Model that uses a Utility
 class MyModel : public AbstractModel
 {
 protected:
 	void OnInit() override
 	{
 		auto logger = GetUtility<LoggerUtility>();
-		logger->Log("MyModel 初始化完成");
+		logger->Log("MyModel initialized");
 	}
 	void OnDeinit() override {}
 };
 
-// 3. 定义一个 System，监听事件
+// 3. Define a System that listens for events
 class PrintSystem : public AbstractSystem
 {
 protected:
@@ -110,12 +109,12 @@ protected:
 		auto e = std::dynamic_pointer_cast<MyEvent>(event);
 		if (e)
 		{
-			std::cout << "PrintSystem 收到事件: " << e->msg << std::endl;
+			std::cout << "PrintSystem received event: " << e->msg << std::endl;
 		}
 	}
 };
 
-// 4. 定义一个 Command
+// 4. Define a Command
 class AddCommand : public AbstractCommand
 {
 	int delta;
@@ -126,11 +125,11 @@ protected:
 	{
 		auto model = GetModel<CounterModel>();
 		model->value += delta;
-		SendEvent<MyEvent>("计数器已增加，当前值: " + std::to_string(model->value));
+		SendEvent<MyEvent>("Counter increased, current value: " + std::to_string(model->value));
 	}
 };
 
-// 1. 定义一个 Model
+// 1. Define a Model for query testing
 class TestQueryCounterModel : public AbstractModel
 {
 public:
@@ -140,7 +139,7 @@ protected:
 	void OnDeinit() override {}
 };
 
-// 3. 定义一个 Command，使用 Utility
+// 3. Define a Command that uses a Utility
 class PrintCommand : public AbstractCommand
 {
 	std::string mMsg;
@@ -150,23 +149,23 @@ protected:
 	void OnExecute() override
 	{
 		auto logger = GetUtility<LoggerUtility>();
-		logger->Log("PrintCommand 执行: " + mMsg);
+		logger->Log("PrintCommand executing: " + mMsg);
 	}
 };
 
-// 2. 定义一个 Query，查询 CounterModel 的值
+// 2. Define a Query to retrieve the CounterModel value
 class GetCounterValueQuery : public AbstractQuery<int>
 {
 protected:
 	int OnDo() override
 	{
-		// 通过基类接口获取 Model
+		// Get Model via base class interface
 		auto model = GetModel<TestQueryCounterModel>();
 		return model->value;
 	}
 };
 
-// 5. 定义架构实现
+// 5. Define the architecture implementation
 class MyAppArchitecture : public Architecture
 {
 protected:
@@ -185,24 +184,24 @@ protected:
 
 int ArchitectureExample()
 {
-	// 创建架构实例
+	// Create architecture instance
 	auto arch = std::make_shared<MyAppArchitecture>();
 	arch->InitArchitecture();
 
-	// 发送命令
+	// Send commands
 	arch->SendCommand<AddCommand>(5);
 	arch->SendCommand<AddCommand>(3);
 
-	// 获取 Model
+	// Get Model
 	auto model = arch->GetModel<CounterModel>();
-	std::cout << "最终计数值: " << model->value << std::endl;
+	std::cout << "Final counter value: " << model->value << std::endl;
 
-	// 发送命令，命令内部会用到 Utility
+	// Send a command that internally uses a Utility
 	arch->SendCommand<PrintCommand>("Hello Utility!");
 
-	// 通过架构发送 Query，获取 CounterModel 的值
+	// Send a Query through the architecture to get CounterModel value
 	int result = arch->SendQuery<GetCounterValueQuery>();
-	std::cout << "CounterModel value: " << result << std::endl; // 输出: 42
+	std::cout << "CounterModel value: " << result << std::endl; // Output: 42
 
 	arch->Deinit();
 	return 0;

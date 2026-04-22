@@ -1120,24 +1120,24 @@ TEST(ArchitectureTest, RegisterUtilityAfterInitDoesNotCrash)
 	EXPECT_EQ(arch->GetUtility<DummyUtility>(), util);
 }
 
-static int g_deinitCounter = 0;
-
 class OrderTestModel : public AbstractModel
 {
 public:
 	int deinitOrder = 0;
+	int* counter = nullptr;
 protected:
 	void OnInit() override {}
-	void OnDeinit() override { deinitOrder = ++g_deinitCounter; }
+	void OnDeinit() override { deinitOrder = ++(*counter); }
 };
 
 class OrderTestSystem : public AbstractSystem
 {
 public:
 	int deinitOrder = 0;
+	int* counter = nullptr;
 protected:
 	void OnInit() override {}
-	void OnDeinit() override { deinitOrder = ++g_deinitCounter; }
+	void OnDeinit() override { deinitOrder = ++(*counter); }
 	void OnEvent(std::shared_ptr<IEvent>) override {}
 };
 
@@ -1149,10 +1149,12 @@ protected:
 
 TEST(ArchitectureTest, DeinitOrderSystemBeforeModel)
 {
-	g_deinitCounter = 0;
+	int deinitCounter = 0;
 	auto arch = std::make_shared<OrderTestArch>();
 	auto model = std::make_shared<OrderTestModel>();
 	auto sys = std::make_shared<OrderTestSystem>();
+	model->counter = &deinitCounter;
+	sys->counter = &deinitCounter;
 	arch->RegisterModel<OrderTestModel>(model);
 	arch->RegisterSystem<OrderTestSystem>(sys);
 	arch->InitArchitecture();
