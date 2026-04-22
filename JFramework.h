@@ -1,4 +1,4 @@
-/****************************************************************************
+/*
  * Copyright (c) 2025 zjlove1989
 
  * https://github.com/z-jacob/JFramework
@@ -20,7 +20,7 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
- ****************************************************************************/
+ */
 
 #ifndef JFRAMEWORK
 #define JFRAMEWORK
@@ -217,7 +217,7 @@ namespace JFramework
 		 * @param eventType Type index of the event
 		 * @param handler Pointer to the handler to unregister
 		 */
-		void UnRegisterEvent(std::type_index eventType, ICanHandleEvent* handler)
+		void UnregisterEvent(std::type_index eventType, ICanHandleEvent* handler)
 		{
 			std::lock_guard<std::recursive_mutex> lock(mMutex);
 			auto it = mSubscribers.find(eventType);
@@ -348,7 +348,7 @@ namespace JFramework
 		 * @param eventType Event type index
 		 * @param handler Event handler
 		 */
-		virtual void UnRegisterEvent(std::type_index eventType,
+		virtual void UnregisterEvent(std::type_index eventType,
 			ICanHandleEvent* handler)
 			= 0;
 
@@ -478,7 +478,7 @@ namespace JFramework
 		 * @param handler Event handler pointer
 		 */
 		template <typename T>
-		void UnRegisterEvent(ICanHandleEvent* handler)
+		void UnregisterEvent(ICanHandleEvent* handler)
 		{
 			if (!handler)
 			{
@@ -486,7 +486,7 @@ namespace JFramework
 			}
 			static_assert(std::is_base_of_v<IEvent, T>,
 				"T must inherit from IEvent");
-			mEventBus->UnRegisterEvent(typeid(T), handler);
+			mEventBus->UnregisterEvent(typeid(T), handler);
 		}
 
 		/**
@@ -574,15 +574,15 @@ namespace JFramework
 	 *
 	 * Base interface for managing unregisterable resources
 	 */
-	class IUnRegister
+	class IUnregister
 	{
 	public:
-		virtual ~IUnRegister() = default;
+		virtual ~IUnregister() = default;
 
 		/**
 		 * @brief Execute unregister operation
 		 */
-		virtual void UnRegister() = 0;
+		virtual void Unregister() = 0;
 	};
 
 	/**
@@ -590,44 +590,44 @@ namespace JFramework
 	 *
 	 * Automatically triggers all registered unregister operations on destruction
 	 */
-	class UnRegisterTrigger
+	class UnregisterTrigger
 	{
 	public:
-		virtual ~UnRegisterTrigger() { this->UnRegister(); }
+		virtual ~UnregisterTrigger() { this->Unregister(); }
 
 		/**
 		 * @brief Add an unregister object
 		 * @param unRegister Unregister object to add
 		 */
-		void AddUnRegister(std::shared_ptr<IUnRegister> unRegister)
+		void AddUnregister(std::shared_ptr<IUnregister> unRegister)
 		{
 			std::lock_guard<std::recursive_mutex> lock(mMutex);
-			mUnRegisters.push_back(std::move(unRegister));
+			mUnregisters.push_back(std::move(unRegister));
 		}
 
 		/**
 		 * @brief Execute all unregister operations
 		 */
-		void UnRegister()
+		void Unregister()
 		{
 			std::lock_guard<std::recursive_mutex> lock(mMutex);
-			for (auto& unRegister : mUnRegisters)
+			for (auto& unRegister : mUnregisters)
 			{
 				try
 				{
-					unRegister->UnRegister();
+					unRegister->Unregister();
 				}
 				catch (const std::exception& e)
 				{
-					std::cerr << "[UnRegisterTrigger] Exception during unregister: " << e.what() << std::endl;
+					std::cerr << "[UnregisterTrigger] Exception during unregister: " << e.what() << std::endl;
 				}
 			}
-			mUnRegisters.clear();
+			mUnregisters.clear();
 		}
 
 	protected:
 		std::recursive_mutex mMutex;                                   ///< Thread safety mutex
-		std::vector<std::shared_ptr<IUnRegister>> mUnRegisters; ///< List of unregister objects
+		std::vector<std::shared_ptr<IUnregister>> mUnregisters; ///< List of unregister objects
 	};
 
 	/**
@@ -637,9 +637,9 @@ namespace JFramework
 	 * @tparam T Property value type
 	 */
 	template <typename T>
-	class BindablePropertyUnRegister
-		: public IUnRegister,
-		public std::enable_shared_from_this<BindablePropertyUnRegister<T>>
+	class BindablePropertyUnregister
+		: public IUnregister,
+		public std::enable_shared_from_this<BindablePropertyUnregister<T>>
 	{
 	public:
 		/**
@@ -648,7 +648,7 @@ namespace JFramework
 		 * @param property Associated bindable property
 		 * @param callback Value change callback function
 		 */
-		BindablePropertyUnRegister(int id,
+		BindablePropertyUnregister(int id,
 			BindableProperty<T>* property,
 			std::function<void(const T&)> callback)
 			: mProperty(property)
@@ -661,9 +661,9 @@ namespace JFramework
 		 * @brief Set auto-unregister on object destruction
 		 * @param unRegisterTrigger Unregister trigger
 		 */
-		void UnRegisterWhenObjectDestroyed(UnRegisterTrigger* unRegisterTrigger)
+		void UnregisterWhenObjectDestroyed(UnregisterTrigger* unRegisterTrigger)
 		{
-			unRegisterTrigger->AddUnRegister(this->shared_from_this());
+			unRegisterTrigger->AddUnregister(this->shared_from_this());
 		}
 
 		/**
@@ -684,11 +684,11 @@ namespace JFramework
 		/**
 		 * @brief Execute unregister operation
 		 */
-		void UnRegister() override
+		void Unregister() override
 		{
 			if (mProperty)
 			{
-				mProperty->UnRegister(mId);
+				mProperty->Unregister(mId);
 				mProperty = nullptr;
 			}
 		}
@@ -815,7 +815,7 @@ namespace JFramework
 		 */
 		void SetValue(const T& newValue)
 		{
-			std::vector<std::shared_ptr<BindablePropertyUnRegister<T>>> observers;
+			std::vector<std::shared_ptr<BindablePropertyUnregister<T>>> observers;
 			T valueToSend;
 			{
 				std::lock_guard<std::recursive_mutex> lock(mMutex);
@@ -857,15 +857,15 @@ namespace JFramework
 		 * @param onValueChanged Value change callback function
 		 * @return Unregister object
 		 */
-		std::shared_ptr<BindablePropertyUnRegister<T>> RegisterWithInitValue(
+		std::shared_ptr<BindablePropertyUnregister<T>> RegisterWithInitValue(
 			std::function<void(const T&)> onValueChanged)
 		{
 			T currentValue;
-			std::shared_ptr<BindablePropertyUnRegister<T>> unRegister;
+			std::shared_ptr<BindablePropertyUnregister<T>> unRegister;
 			{
 				std::lock_guard<std::recursive_mutex> lock(mMutex);
 				currentValue = mValue;
-				unRegister = std::make_shared<BindablePropertyUnRegister<T>>(
+				unRegister = std::make_shared<BindablePropertyUnregister<T>>(
 					mNextId++, this, std::move(onValueChanged));
 				mObservers[unRegister->GetId()] = unRegister;
 			}
@@ -878,11 +878,11 @@ namespace JFramework
 		 * @param onValueChanged Value change callback function
 		 * @return Unregister object
 		 */
-		std::shared_ptr<BindablePropertyUnRegister<T>> Register(
+		std::shared_ptr<BindablePropertyUnregister<T>> Register(
 			std::function<void(const T&)> onValueChanged)
 		{
 			std::lock_guard<std::recursive_mutex> lock(mMutex);
-			auto unRegister = std::make_shared<BindablePropertyUnRegister<T>>(
+			auto unRegister = std::make_shared<BindablePropertyUnregister<T>>(
 				mNextId++, this, std::move(onValueChanged));
 			mObservers[unRegister->GetId()] = unRegister;
 			return unRegister;
@@ -892,7 +892,7 @@ namespace JFramework
 		 * @brief Unregister observer
 		 * @param id Observer ID
 		 */
-		void UnRegister(int id)
+		void Unregister(int id)
 		{
 			std::lock_guard<std::recursive_mutex> lock(mMutex);
 			mObservers.erase(id);
@@ -931,7 +931,7 @@ namespace JFramework
 		mutable std::recursive_mutex mMutex;       ///< Thread safety mutex
 		int mNextId = 0;         ///< Next observer ID
 		T mValue;              ///< Property value
-		std::unordered_map<int, std::shared_ptr<BindablePropertyUnRegister<T>>> mObservers; ///< Observer list
+		std::unordered_map<int, std::shared_ptr<BindablePropertyUnregister<T>>> mObservers; ///< Observer list
 	};
 
 	// ============================== Capability Interfaces ==============================
@@ -1258,7 +1258,7 @@ namespace JFramework
 		 * @param handler Event handler
 		 */
 		template <typename T>
-		void UnRegisterEvent(ICanHandleEvent* handler)
+		void UnregisterEvent(ICanHandleEvent* handler)
 		{
 			static_assert(std::is_base_of_v<IEvent, T>,
 				"T must inherit from IEvent");
@@ -1269,7 +1269,7 @@ namespace JFramework
 				throw ArchitectureNotSetException(typeid(T).name());
 			}
 
-			arch->UnRegisterEvent<T>(handler);
+			arch->UnregisterEvent<T>(handler);
 		}
 	};
 
@@ -1278,7 +1278,8 @@ namespace JFramework
 	/**
 	 * @brief Command interface
 	 *
-	 * Base interface for the command pattern, used to encapsulate operation requests
+	 * Base interface for the command pattern, used to encapsulate operation requests.
+	 * The J prefix disambiguates from the common ICommand name found in many frameworks.
 	 */
 	class IJCommand : public ICanSetArchitecture,
 		public ICanGetSystem,
@@ -1497,7 +1498,7 @@ namespace JFramework
 		using IArchitecture::RegisterUtility;
 		using IArchitecture::SendCommand;
 		using IArchitecture::SendEvent;
-		using IArchitecture::UnRegisterEvent;
+		using IArchitecture::UnregisterEvent;
 
 	private:
 		/**
@@ -1508,10 +1509,6 @@ namespace JFramework
 		void RegisterSystem(std::type_index typeId,
 			std::shared_ptr<ISystem> system) override
 		{
-			if (!system)
-			{
-				throw std::invalid_argument("System cannot be null");
-			}
 			system->SetArchitecture(shared_from_this());
 			mContainer->Register<ISystem>(typeId, system);
 			if (mInitialized)
@@ -1538,10 +1535,6 @@ namespace JFramework
 		void RegisterModel(std::type_index typeId,
 			std::shared_ptr<IModel> model) override
 		{
-			if (!model)
-			{
-				throw std::invalid_argument("Model cannot be null");
-			}
 			model->SetArchitecture(shared_from_this());
 			mContainer->Register<IModel>(typeId, model);
 			if (mInitialized)
@@ -1589,10 +1582,6 @@ namespace JFramework
 		void RegisterEvent(std::type_index eventType,
 			ICanHandleEvent* handler) override
 		{
-			if (!handler)
-			{
-				throw std::invalid_argument("ICanHandleEvent cannot be null");
-			}
 			mEventBus->RegisterEvent(eventType, handler);
 		}
 
@@ -1601,14 +1590,10 @@ namespace JFramework
 		 * @param eventType Event type index
 		 * @param handler Event handler
 		 */
-		void UnRegisterEvent(std::type_index eventType,
+		void UnregisterEvent(std::type_index eventType,
 			ICanHandleEvent* handler) override
 		{
-			if (!handler)
-			{
-				throw std::invalid_argument("ICanHandleEvent cannot be null");
-			}
-			mEventBus->UnRegisterEvent(eventType, handler);
+			mEventBus->UnregisterEvent(eventType, handler);
 		}
 
 	public:

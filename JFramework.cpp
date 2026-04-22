@@ -20,7 +20,7 @@ void BindablePropertyExample()
 	counter = 2;         // Output: Counter changed to: 2
 
 	// 4. Unregister the observer (no more notifications)
-	unreg->UnRegister();
+	unreg->Unregister();
 	counter.SetValue(3); // No output
 
 	// 5. Register with initial value notification
@@ -34,16 +34,16 @@ void BindablePropertyExample()
 	counter = 10; // Output: Init observer, value: 10
 
 	BindableProperty<int> autoCounter(100);
-	// 7. Auto-unregister observer (optional, using UnRegisterTrigger)
+	// 7. Auto-unregister observer (optional, using UnregisterTrigger)
 	{
-		UnRegisterTrigger trigger;
+		UnregisterTrigger trigger;
 
 		auto autoUnreg = autoCounter.Register([](const int& value)
 			{
 				std::cout << "Auto observer: " << value << std::endl;
 			});
 		// Bind to trigger; auto-unregisters when trigger destructs
-		autoUnreg->UnRegisterWhenObjectDestroyed(&trigger);
+		autoUnreg->UnregisterWhenObjectDestroyed(&trigger);
 
 		autoCounter = 101; // Output: Auto observer: 101
 
@@ -102,7 +102,7 @@ protected:
 	}
 	void OnDeinit() override
 	{
-		UnRegisterEvent<MyEvent>(this);
+		UnregisterEvent<MyEvent>(this);
 	}
 	void OnEvent(std::shared_ptr<IEvent> event) override
 	{

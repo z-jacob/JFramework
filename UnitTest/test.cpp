@@ -62,12 +62,12 @@ TEST(EventBusTest, RegisterAndSendEvent)
 	EXPECT_TRUE(handler.handled);
 }
 
-TEST(EventBusTest, UnRegisterEvent)
+TEST(EventBusTest, UnregisterEvent)
 {
 	EventBus bus;
 	TestHandler handler;
 	bus.RegisterEvent(typeid(TestEvent), &handler);
-	bus.UnRegisterEvent(typeid(TestEvent), &handler);
+	bus.UnregisterEvent(typeid(TestEvent), &handler);
 	handler.handled = false;
 	bus.SendEvent(std::make_shared<TestEvent>());
 	EXPECT_FALSE(handler.handled);
@@ -148,20 +148,20 @@ TEST(EventBusTest, ExceptionInHandlerDoesNotAffectOthers)
 	EXPECT_EQ(normalHandler.count, 1);
 }
 
-TEST(EventBusTest, UnRegisterNotRegisteredHandler)
+TEST(EventBusTest, UnregisterNotRegisteredHandler)
 {
 	EventBus bus;
 	TestHandler handler;
-	EXPECT_NO_THROW(bus.UnRegisterEvent(typeid(TestEvent), &handler));
+	EXPECT_NO_THROW(bus.UnregisterEvent(typeid(TestEvent), &handler));
 }
 
-TEST(EventBusTest, UnRegisterTwice)
+TEST(EventBusTest, UnregisterTwice)
 {
 	EventBus bus;
 	TestHandler handler;
 	bus.RegisterEvent(typeid(TestEvent), &handler);
-	bus.UnRegisterEvent(typeid(TestEvent), &handler);
-	EXPECT_NO_THROW(bus.UnRegisterEvent(typeid(TestEvent), &handler));
+	bus.UnregisterEvent(typeid(TestEvent), &handler);
+	EXPECT_NO_THROW(bus.UnregisterEvent(typeid(TestEvent), &handler));
 }
 
 TEST(EventBusTest, ConcurrentRegisterAndSend)
@@ -223,7 +223,7 @@ TEST(BindablePropertyTest, RegisterAndTrigger)
 	auto unreg = prop.Register([&](const int& v) { observed = v; });
 	prop.SetValue(5);
 	EXPECT_EQ(observed, 5);
-	unreg->UnRegister();
+	unreg->Unregister();
 	prop.SetValue(10);
 	EXPECT_EQ(observed, 5);
 }
@@ -268,14 +268,14 @@ TEST(BindablePropertyTest, DuplicateRegisterCallback)
 	EXPECT_EQ(count, 2);
 }
 
-TEST(BindablePropertyTest, UnRegisterStopsNotification)
+TEST(BindablePropertyTest, UnregisterStopsNotification)
 {
 	BindableProperty<int> prop(0);
 	int v = 0;
 	auto u = prop.Register([&](const int& val) { v = val; });
 	prop.SetValue(5);
 	EXPECT_EQ(v, 5);
-	u->UnRegister();
+	u->Unregister();
 	prop.SetValue(10);
 	EXPECT_EQ(v, 5);
 }
@@ -302,19 +302,19 @@ TEST(BindablePropertyTest, CallbackThrowsException)
 	EXPECT_EQ(v, 123);
 }
 
-TEST(BindablePropertyTest, UnRegisterWhenObjectDestroyed)
+TEST(BindablePropertyTest, UnregisterWhenObjectDestroyed)
 {
 	BindableProperty<int> prop(0);
 	int v = 0;
-	class MyTrigger : public UnRegisterTrigger {};
+	class MyTrigger : public UnregisterTrigger {};
 	MyTrigger trigger;
 	{
 		auto u = prop.Register([&](const int& val) { v = val; });
-		u->UnRegisterWhenObjectDestroyed(&trigger);
+		u->UnregisterWhenObjectDestroyed(&trigger);
 		prop.SetValue(7);
 		EXPECT_EQ(v, 7);
 	}
-	trigger.UnRegister();
+	trigger.Unregister();
 	prop.SetValue(8);
 	EXPECT_EQ(v, 7);
 }
@@ -440,58 +440,58 @@ TEST(BindablePropertyTest, RecursiveSetValueInCallback)
 	EXPECT_EQ(propB.GetValue(), 2);
 }
 
-// ============================== UnRegisterTrigger Tests ==============================
+// ============================== UnregisterTrigger Tests ==============================
 
-class DummyUnRegister : public IUnRegister
+class DummyUnregister : public IUnregister
 {
 public:
 	bool called = false;
-	void UnRegister() override { called = true; }
+	void Unregister() override { called = true; }
 };
 
-TEST(UnRegisterTriggerTest, AddAndUnRegister)
+TEST(UnregisterTriggerTest, AddAndUnregister)
 {
-	UnRegisterTrigger trigger;
-	auto dummy = std::make_shared<DummyUnRegister>();
-	trigger.AddUnRegister(dummy);
-	trigger.UnRegister();
+	UnregisterTrigger trigger;
+	auto dummy = std::make_shared<DummyUnregister>();
+	trigger.AddUnregister(dummy);
+	trigger.Unregister();
 	EXPECT_TRUE(dummy->called);
 }
 
-TEST(UnRegisterTriggerTest, DestructorAutoUnRegister)
+TEST(UnregisterTriggerTest, DestructorAutoUnregister)
 {
-	auto dummy = std::make_shared<DummyUnRegister>();
+	auto dummy = std::make_shared<DummyUnregister>();
 	{
-		UnRegisterTrigger trigger;
-		trigger.AddUnRegister(dummy);
+		UnregisterTrigger trigger;
+		trigger.AddUnregister(dummy);
 	}
 	EXPECT_TRUE(dummy->called);
 }
 
-TEST(UnRegisterTriggerTest, AddMultipleAndUnRegister)
+TEST(UnregisterTriggerTest, AddMultipleAndUnregister)
 {
-	UnRegisterTrigger trigger;
-	auto d1 = std::make_shared<DummyUnRegister>();
-	auto d2 = std::make_shared<DummyUnRegister>();
-	auto d3 = std::make_shared<DummyUnRegister>();
-	trigger.AddUnRegister(d1);
-	trigger.AddUnRegister(d2);
-	trigger.AddUnRegister(d3);
-	trigger.UnRegister();
+	UnregisterTrigger trigger;
+	auto d1 = std::make_shared<DummyUnregister>();
+	auto d2 = std::make_shared<DummyUnregister>();
+	auto d3 = std::make_shared<DummyUnregister>();
+	trigger.AddUnregister(d1);
+	trigger.AddUnregister(d2);
+	trigger.AddUnregister(d3);
+	trigger.Unregister();
 	EXPECT_TRUE(d1->called);
 	EXPECT_TRUE(d2->called);
 	EXPECT_TRUE(d3->called);
 }
 
-TEST(UnRegisterTriggerTest, UnRegisterMultipleTimes)
+TEST(UnregisterTriggerTest, UnregisterMultipleTimes)
 {
-	UnRegisterTrigger trigger;
-	auto dummy = std::make_shared<DummyUnRegister>();
-	trigger.AddUnRegister(dummy);
-	trigger.UnRegister();
+	UnregisterTrigger trigger;
+	auto dummy = std::make_shared<DummyUnregister>();
+	trigger.AddUnregister(dummy);
+	trigger.Unregister();
 	EXPECT_TRUE(dummy->called);
 	dummy->called = false;
-	trigger.UnRegister();
+	trigger.Unregister();
 	EXPECT_FALSE(dummy->called);
 }
 
@@ -628,7 +628,7 @@ TEST(IOCContainerTest, RegisterUtilityDuplicateThrows)
 	EXPECT_THROW((container.*static_cast<RegisterType>(&IOCContainer::Register<DummyUtility, IUtility>))(typeid(DummyUtility), util), ComponentAlreadyRegisteredException);
 }
 
-TEST(IOCContainerTest, GetAllUtilitys)
+TEST(IOCContainerTest, GetAllUtilities)
 {
 	IOCContainer container;
 	auto util = std::make_shared<DummyUtility>();
@@ -778,7 +778,7 @@ TEST(ArchitectureTest, RegisterEventAndSendEvent)
 	arch->RegisterEvent<MyEvent>(&handler);
 	arch->SendEvent<MyEvent>();
 	EXPECT_TRUE(handler.called);
-	arch->UnRegisterEvent<MyEvent>(&handler);
+	arch->UnregisterEvent<MyEvent>(&handler);
 	handler.called = false;
 	arch->SendEvent<MyEvent>();
 	EXPECT_FALSE(handler.called);
@@ -941,7 +941,7 @@ TEST(ArchitectureTest, EventRegisterSendUnregister)
 	EXPECT_TRUE(handler.called);
 
 	handler.called = false;
-	arch->UnRegisterEvent<ArchTestEvent>(&handler);
+	arch->UnregisterEvent<ArchTestEvent>(&handler);
 	arch->SendEvent<ArchTestEvent>();
 	EXPECT_FALSE(handler.called);
 }
@@ -956,7 +956,7 @@ TEST(ArchitectureTest, RegisterEventNullptrThrows)
 {
 	auto arch = std::make_shared<MyArchitecture>();
 	EXPECT_THROW(arch->RegisterEvent<ArchTestEvent>(nullptr), std::invalid_argument);
-	EXPECT_THROW(arch->UnRegisterEvent<ArchTestEvent>(nullptr), std::invalid_argument);
+	EXPECT_THROW(arch->UnregisterEvent<ArchTestEvent>(nullptr), std::invalid_argument);
 }
 
 TEST(ArchitectureTest, SendCommandWorks)
@@ -1162,9 +1162,9 @@ TEST(ArchitectureTest, DeinitOrderSystemBeforeModel)
 	EXPECT_LT(sys->deinitOrder, model->deinitOrder);
 }
 
-// ============================== BindablePropertyUnRegister Tests ==============================
+// ============================== BindablePropertyUnregister Tests ==============================
 
-TEST(BindablePropertyUnRegisterTest, GetIdReturnsCorrectId)
+TEST(BindablePropertyUnregisterTest, GetIdReturnsCorrectId)
 {
 	BindableProperty<int> prop(0);
 	auto unreg = prop.Register([](const int&) {});
@@ -1172,40 +1172,40 @@ TEST(BindablePropertyUnRegisterTest, GetIdReturnsCorrectId)
 	EXPECT_GE(id, 0);
 }
 
-TEST(BindablePropertyUnRegisterTest, UnRegisterRemovesObserver)
+TEST(BindablePropertyUnregisterTest, UnregisterRemovesObserver)
 {
 	BindableProperty<int> prop(0);
 	int value = 0;
 	auto unreg = prop.Register([&](const int& v) { value = v; });
 	prop.SetValue(1);
 	EXPECT_EQ(value, 1);
-	unreg->UnRegister();
+	unreg->Unregister();
 	prop.SetValue(2);
 	EXPECT_EQ(value, 1);
 }
 
-TEST(BindablePropertyUnRegisterTest, UnRegisterIsIdempotent)
+TEST(BindablePropertyUnregisterTest, UnregisterIsIdempotent)
 {
 	BindableProperty<int> prop(0);
 	int value = 0;
 	auto unreg = prop.Register([&](const int& v) { value = v; });
 	prop.SetValue(1);
-	unreg->UnRegister();
-	EXPECT_NO_THROW(unreg->UnRegister());
+	unreg->Unregister();
+	EXPECT_NO_THROW(unreg->Unregister());
 	prop.SetValue(2);
 	EXPECT_EQ(value, 1);
 }
 
-TEST(BindablePropertyUnRegisterTest, InvokeCallsCallback)
+TEST(BindablePropertyUnregisterTest, InvokeCallsCallback)
 {
 	bool called = false;
 	BindableProperty<int> prop(0);
-	auto unreg = std::make_shared<BindablePropertyUnRegister<int>>(0, &prop, [&](const int&) { called = true; });
+	auto unreg = std::make_shared<BindablePropertyUnregister<int>>(0, &prop, [&](const int&) { called = true; });
 	unreg->Invoke(123);
 	EXPECT_TRUE(called);
 }
 
-TEST(BindablePropertyUnRegisterTest, InvokeWithMoveOnlyType)
+TEST(BindablePropertyUnregisterTest, InvokeWithMoveOnlyType)
 {
 	BindableProperty<int> prop(1);
 	bool called = false;
@@ -1218,66 +1218,66 @@ TEST(BindablePropertyUnRegisterTest, InvokeWithMoveOnlyType)
 	EXPECT_TRUE(called);
 }
 
-TEST(BindablePropertyUnRegisterTest, UnRegisterWhenObjectDestroyedWorks)
+TEST(BindablePropertyUnregisterTest, UnregisterWhenObjectDestroyedWorks)
 {
 	BindableProperty<int> prop(0);
 	int value = 0;
-	class MyTrigger : public UnRegisterTrigger {};
+	class MyTrigger : public UnregisterTrigger {};
 	MyTrigger trigger;
 	{
 		auto unreg = prop.Register([&](const int& v) { value = v; });
-		unreg->UnRegisterWhenObjectDestroyed(&trigger);
+		unreg->UnregisterWhenObjectDestroyed(&trigger);
 		prop.SetValue(5);
 		EXPECT_EQ(value, 5);
 	}
-	trigger.UnRegister();
+	trigger.Unregister();
 	prop.SetValue(10);
 	EXPECT_EQ(value, 5);
 }
 
-TEST(BindablePropertyUnRegisterTest, UnRegisterWhenObjectDestroyedIsIdempotent)
+TEST(BindablePropertyUnregisterTest, UnregisterWhenObjectDestroyedIsIdempotent)
 {
 	BindableProperty<int> prop(0);
 	int value = 0;
-	class MyTrigger : public UnRegisterTrigger {};
+	class MyTrigger : public UnregisterTrigger {};
 	MyTrigger trigger;
 	auto unreg = prop.Register([&](const int& v) { value = v; });
-	unreg->UnRegisterWhenObjectDestroyed(&trigger);
-	EXPECT_NO_THROW(unreg->UnRegisterWhenObjectDestroyed(&trigger));
-	trigger.UnRegister();
+	unreg->UnregisterWhenObjectDestroyed(&trigger);
+	EXPECT_NO_THROW(unreg->UnregisterWhenObjectDestroyed(&trigger));
+	trigger.Unregister();
 	prop.SetValue(10);
 	EXPECT_EQ(value, 0);
 }
 
-TEST(BindablePropertyUnRegisterTest, CallbackCanBeNull)
+TEST(BindablePropertyUnregisterTest, CallbackCanBeNull)
 {
 	BindableProperty<int> prop(0);
-	auto unreg = std::make_shared<BindablePropertyUnRegister<int>>(0, &prop, nullptr);
+	auto unreg = std::make_shared<BindablePropertyUnregister<int>>(0, &prop, nullptr);
 	EXPECT_NO_THROW(unreg->Invoke(1));
 }
 
-TEST(BindablePropertyUnRegisterTest, PropertyPointerNullAfterUnRegister)
+TEST(BindablePropertyUnregisterTest, PropertyPointerNullAfterUnregister)
 {
 	BindableProperty<int> prop(0);
 	auto unreg = prop.Register([](const int&) {});
-	unreg->UnRegister();
-	EXPECT_NO_THROW(unreg->UnRegister());
+	unreg->Unregister();
+	EXPECT_NO_THROW(unreg->Unregister());
 }
 
-TEST(BindablePropertyUnRegisterTest, UnRegisterDoesNotAffectOtherObservers)
+TEST(BindablePropertyUnregisterTest, UnregisterDoesNotAffectOtherObservers)
 {
 	BindableProperty<int> prop(0);
 	int v1 = 0, v2 = 0;
 	auto u1 = prop.Register([&](const int& v) { v1 = v; });
 	auto u2 = prop.Register([&](const int& v) { v2 = v; });
 	prop.SetValue(1);
-	u1->UnRegister();
+	u1->Unregister();
 	prop.SetValue(2);
 	EXPECT_EQ(v1, 1);
 	EXPECT_EQ(v2, 2);
 }
 
-TEST(BindablePropertyUnRegisterTest, SetPropertyAfterMove)
+TEST(BindablePropertyUnregisterTest, SetPropertyAfterMove)
 {
 	BindableProperty<int> prop1(0);
 	int observed = 0;
@@ -1285,7 +1285,7 @@ TEST(BindablePropertyUnRegisterTest, SetPropertyAfterMove)
 	BindableProperty<int> prop2(std::move(prop1));
 	prop2.SetValue(55);
 	EXPECT_EQ(observed, 55);
-	unreg->UnRegister();
+	unreg->Unregister();
 	int observed2 = 0;
 	auto u2 = prop2.Register([&](const int& v) { observed2 = v; });
 	prop2.SetValue(66);
@@ -1496,7 +1496,7 @@ TEST(CapabilityTest, ICanRegisterEvent_Success)
 	EXPECT_TRUE(handler.called);
 
 	handler.called = false;
-	obj.UnRegisterEvent<DummyEvent>(&handler);
+	obj.UnregisterEvent<DummyEvent>(&handler);
 	arch->SendEvent<DummyEvent>();
 	EXPECT_FALSE(handler.called);
 }
@@ -1506,7 +1506,7 @@ TEST(CapabilityTest, ICanRegisterEvent_ArchNotSet)
 	CanRegisterEventObj obj;
 	DummyHandler handler;
 	EXPECT_THROW(obj.RegisterEvent<DummyEvent>(&handler), ArchitectureNotSetException);
-	EXPECT_THROW(obj.UnRegisterEvent<DummyEvent>(&handler), ArchitectureNotSetException);
+	EXPECT_THROW(obj.UnregisterEvent<DummyEvent>(&handler), ArchitectureNotSetException);
 }
 
 // ============================== AbstractCommand Tests ==============================
@@ -1749,4 +1749,290 @@ TEST(AbstractQueryTest, SetAndGetArchitecture)
 	MyAbstractQuery query;
 	query.SetArchitecture(arch);
 	EXPECT_EQ(query.GetArchitecture().lock(), arch);
+}
+
+// ============================== Integration Tests ==============================
+
+class IntegrationEvent : public IEvent
+{
+};
+
+class IntegrationModel : public AbstractModel
+{
+public:
+	int value = 0;
+	bool eventSent = false;
+protected:
+	void OnInit() override { value = 0; }
+	void OnDeinit() override {}
+};
+
+class IntegrationUtility : public IUtility
+{
+public:
+	mutable std::string lastLog;
+	void Log(const std::string& msg) const { lastLog = msg; }
+};
+
+class IntegrationCommand : public AbstractCommand
+{
+public:
+	int delta;
+	IntegrationCommand(int d) : delta(d) {}
+protected:
+	void OnExecute() override
+	{
+		auto model = GetModel<IntegrationModel>();
+		model->value += delta;
+		SendEvent<IntegrationEvent>();
+		auto util = GetUtility<IntegrationUtility>();
+		util->Log("Command executed, value=" + std::to_string(model->value));
+	}
+};
+
+class IntegrationQuery : public AbstractQuery<int>
+{
+protected:
+	int OnDo() override
+	{
+		auto model = GetModel<IntegrationModel>();
+		return model->value;
+	}
+};
+
+class IntegrationSystem : public AbstractSystem
+{
+public:
+	int eventCount = 0;
+protected:
+	void OnInit() override { RegisterEvent<IntegrationEvent>(this); }
+	void OnDeinit() override { UnregisterEvent<IntegrationEvent>(this); }
+	void OnEvent(std::shared_ptr<IEvent> event) override { ++eventCount; }
+};
+
+class IntegrationArch : public Architecture
+{
+protected:
+	void Init() override
+	{
+		RegisterUtility(std::make_shared<IntegrationUtility>());
+		RegisterModel(std::make_shared<IntegrationModel>());
+		RegisterSystem(std::make_shared<IntegrationSystem>());
+	}
+};
+
+TEST(IntegrationTest, CommandUsesModelEventAndUtility)
+{
+	auto arch = std::make_shared<IntegrationArch>();
+	arch->InitArchitecture();
+
+	arch->SendCommand<IntegrationCommand>(5);
+	arch->SendCommand<IntegrationCommand>(3);
+
+	auto model = arch->GetModel<IntegrationModel>();
+	EXPECT_EQ(model->value, 8);
+
+	auto sys = arch->GetSystem<IntegrationSystem>();
+	EXPECT_EQ(sys->eventCount, 2);
+
+	auto util = arch->GetUtility<IntegrationUtility>();
+	EXPECT_EQ(util->lastLog, "Command executed, value=8");
+
+	int result = arch->SendQuery<IntegrationQuery>();
+	EXPECT_EQ(result, 8);
+
+	arch->Deinit();
+}
+
+TEST(IntegrationTest, DeinitClearsSystemEventRegistrations)
+{
+	auto arch = std::make_shared<IntegrationArch>();
+	arch->InitArchitecture();
+
+	arch->SendCommand<IntegrationCommand>(1);
+	auto sys = arch->GetSystem<IntegrationSystem>();
+	EXPECT_EQ(sys->eventCount, 1);
+
+	arch->Deinit();
+
+	arch->SendCommand<IntegrationCommand>(1);
+	EXPECT_EQ(sys->eventCount, 1);
+}
+
+// ============================== Concurrency Tests ==============================
+
+TEST(BindablePropertyConcurrencyTest, ConcurrentSetValue)
+{
+	BindableProperty<int> prop(0);
+	std::atomic<int> callCount{0};
+	auto u = prop.Register([&](const int&) { ++callCount; });
+
+	auto setter = [&](int start)
+	{
+		for (int i = 0; i < 100; ++i)
+			prop.SetValue(start + i);
+	};
+
+	std::thread t1(setter, 100);
+	std::thread t2(setter, 200);
+	std::thread t3(setter, 300);
+	t1.join();
+	t2.join();
+	t3.join();
+
+	EXPECT_GT(callCount.load(), 0);
+}
+
+TEST(BindablePropertyConcurrencyTest, ConcurrentRegisterAndSetValue)
+{
+	BindableProperty<int> prop(0);
+	std::atomic<int> notifyCount{0};
+
+	auto reg = [&]
+	{
+		for (int i = 0; i < 50; ++i)
+		{
+			auto u = prop.Register([&](const int&) { ++notifyCount; });
+			u->Unregister();
+		}
+	};
+
+	auto setter = [&]
+	{
+		for (int i = 0; i < 50; ++i)
+			prop.SetValue(i);
+	};
+
+	std::thread t1(reg);
+	std::thread t2(setter);
+	t1.join();
+	t2.join();
+
+	SUCCEED();
+}
+
+TEST(ArchitectureConcurrencyTest, ConcurrentInitDeinit)
+{
+	auto arch = std::make_shared<IntegrationArch>();
+	arch->InitArchitecture();
+
+	auto model = arch->GetModel<IntegrationModel>();
+	auto sys = arch->GetSystem<IntegrationSystem>();
+
+	EXPECT_TRUE(model->IsInitialized());
+	EXPECT_TRUE(sys->IsInitialized());
+
+	arch->Deinit();
+
+	EXPECT_FALSE(model->IsInitialized());
+	EXPECT_FALSE(sys->IsInitialized());
+}
+
+// ============================== Reentrancy Tests ==============================
+
+TEST(BindablePropertyReentrancyTest, RegisterInCallback)
+{
+	BindableProperty<int> prop(0);
+	int callCount = 0;
+	std::shared_ptr<BindablePropertyUnregister<int>> lateReg;
+
+	prop.Register([&](const int& v)
+	{
+		if (v == 1 && !lateReg)
+		{
+			lateReg = prop.Register([&](const int&) { ++callCount; });
+		}
+	});
+
+	prop.SetValue(1);
+	EXPECT_NE(lateReg, nullptr);
+	EXPECT_EQ(callCount, 0);
+
+	prop.SetValue(2);
+	EXPECT_EQ(callCount, 1);
+}
+
+TEST(BindablePropertyReentrancyTest, UnregisterInCallback)
+{
+	BindableProperty<int> prop(0);
+	int v1 = 0, v2 = 0;
+	std::shared_ptr<BindablePropertyUnregister<int>> u2;
+
+	auto u1 = prop.Register([&](const int& v)
+	{
+		v1 = v;
+		if (v == 5 && u2)
+		{
+			u2->Unregister();
+		}
+	});
+
+	u2 = prop.Register([&](const int& v) { v2 = v; });
+
+	prop.SetValue(3);
+	EXPECT_EQ(v1, 3);
+	EXPECT_EQ(v2, 3);
+
+	// Unregister takes effect on the next SetValue (snapshot-based invocation)
+	prop.SetValue(5);
+	EXPECT_EQ(v1, 5);
+	EXPECT_EQ(v2, 5);
+
+	prop.SetValue(7);
+	EXPECT_EQ(v1, 7);
+	EXPECT_EQ(v2, 5);
+}
+
+// ============================== Coverage Gap Tests ==============================
+
+class ThrowingUnregister : public IUnregister
+{
+public:
+	bool unregistered = false;
+	void Unregister() override
+	{
+		unregistered = true;
+		throw std::runtime_error("unregister failed");
+	}
+};
+
+TEST(UnregisterTriggerTest, ExceptionInUnregisterCaught)
+{
+	UnregisterTrigger trigger;
+	auto throwing = std::make_shared<ThrowingUnregister>();
+	trigger.AddUnregister(throwing);
+	EXPECT_NO_THROW(trigger.Unregister());
+	EXPECT_TRUE(throwing->unregistered);
+}
+
+TEST(UnregisterTriggerTest, ExceptionDoesNotBlockRemaining)
+{
+	UnregisterTrigger trigger;
+	auto t1 = std::make_shared<ThrowingUnregister>();
+	auto normal = std::make_shared<DummyUnregister>();
+	trigger.AddUnregister(t1);
+	trigger.AddUnregister(normal);
+	EXPECT_NO_THROW(trigger.Unregister());
+	EXPECT_TRUE(t1->unregistered);
+	EXPECT_TRUE(normal->called);
+}
+
+TEST(AbstractControllerTest, GetArchitectureReturnsSetArch)
+{
+	auto arch = std::make_shared<MyArchitecture>();
+	MyAbstractController ctrl(arch);
+	EXPECT_FALSE(ctrl.GetArchitecture().expired());
+	EXPECT_EQ(ctrl.GetArchitecture().lock(), arch);
+}
+
+TEST(AbstractControllerTest, GetArchitectureExpiredAfterReset)
+{
+	std::weak_ptr<IArchitecture> weakArch;
+	{
+		auto arch = std::make_shared<MyArchitecture>();
+		MyAbstractController ctrl(arch);
+		weakArch = ctrl.GetArchitecture();
+		EXPECT_FALSE(weakArch.expired());
+	}
+	EXPECT_TRUE(weakArch.expired());
 }
